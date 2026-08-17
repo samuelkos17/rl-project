@@ -353,3 +353,59 @@ would be measuring the wrong thing.
 It is fine. Worst case we found needs roughly 37-53 steps against a 120 limit.
 So when the hard mazes score zero — and they probably will — that will genuinely
 be because exploring is hard, which is exactly what we are trying to measure.
+
+## 2026-08-17 — Visit logging, and why results are written atomically
+
+**Status:** Active
+
+**What changed:** During a run we now record where the agent actually is —
+its x, y position and which of the 4 directions it faces — and count how often it
+has been in each of those situations. We save a snapshot of those counts every
+10,000 steps.
+
+**Why snapshots rather than one final total:** our main question is whether
+exploring a lot *early* predicts doing well *later*. That needs coverage measured
+over time, not just at the end.
+
+**Why we compute no coverage percentages during the run:** we only save raw
+counts. Every actual metric is worked out afterwards from the saved files. That
+means if we decide on the last day that our definition of coverage was wrong, we
+fix the analysis instead of re-running 260 experiments.
+
+**Why the result folder is written in a funny way:** a run first writes to a
+folder ending in `.partial`, and only renames it to the real name once it has
+finished successfully. The sweep runner skips any run whose folder already
+exists, so if a crashed run left half a folder behind, that experiment would be
+skipped forever and we would quietly lose a data point without noticing. This way,
+a folder existing always means a run that genuinely finished.
+
+**What it means for the results:** Nothing scientific. It stops us losing data.
+
+## 2026-08-17 — Daniel's machine runs Linux with pyenv instead of conda
+
+**Status:** Active
+
+**What changed:** `CLAUDE.md` says the environment is built with conda. Daniel's
+machine is Linux and has no conda, so his environment is a plain Python virtual
+environment built on a pyenv-installed Python 3.11.15 instead. Same Python
+version, same packages from `requirements.txt`, same test results (16 passed).
+
+**Why:** Nothing in the project actually depends on conda — it only needs
+"Python 3.11 plus the listed packages". Installing conda purely to match the
+instruction would have cost time and changed nothing.
+
+**The one trap we hit, and it matters for anyone else on Linux:** on Windows,
+`pip install torch` gives you the processor-only version, which is what we want.
+**On Linux the default is the opposite** — pip pulls the graphics-card version
+plus about 2.5 GB of NVIDIA libraries. That is the build our own benchmark showed
+to be *slower* for this project, and `requirements.txt` warns against it, but the
+warning was written assuming Windows. The fix is to install torch explicitly from
+the processor-only package index first:
+`pip install torch --index-url https://download.pytorch.org/whl/cpu`.
+Verified afterwards: `torch.__version__` reports `2.13.0+cpu` and
+`torch.cuda.is_available()` is `False`.
+
+**What it means for the results:** Nothing, as long as everyone ends up on a
+processor-only torch — which is exactly what the fixed `device: cpu` setting
+assumes. If someone silently ran the graphics-card build, their runs would be
+slower but produce the same numbers.

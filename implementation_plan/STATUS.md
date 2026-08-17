@@ -3,7 +3,7 @@
 **Update this whenever you finish a task, before you open the PR.** It is the one
 place the other two look to answer "can I start yet?".
 
-Last updated: **2026-08-17**, by Samuel.
+Last updated: **2026-08-17**, by Daniel.
 
 ---
 
@@ -13,7 +13,7 @@ Last updated: **2026-08-17**, by Samuel.
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark | — | 3 env factory |
 | **Max** | B — Exploration strategies | — | not started | 1 epsilon-greedy |
-| **Daniel** | C — Logging, metrics & analysis | — | not started | 1 visitation logging |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging | — | 2 aggregation |
 
 ## What is available on `main` right now
 
@@ -25,6 +25,7 @@ Everything below is merged and safe to import.
 | `Explorer` (ABC) | `rlx.exploration.base` | Max |
 | `make_explorer`, `STRATEGIES` | `rlx.exploration` | Max |
 | `ENV_IDS`, `difficulty_index` | `rlx.envs` | Daniel |
+| `RunLogger` | `rlx.logging` | Samuel |
 
 Settled by Samuel's task 2, no longer provisional:
 - `device: cpu` — measured, the GPU is 13% slower. **Do not install a CUDA torch.**
@@ -40,7 +41,7 @@ Settled by Samuel's task 2, no longer provisional:
 | Daniel 1, 2 | `RunConfig`, `difficulty_index` | Samuel 1 | ✅ **unblocked** |
 | Daniel 3 (coverage) | `grid_info`, `reachable_mask`, `bfs_distances` | Samuel 3 | ⏳ blocked |
 | Max 4 (NoisyNets) | `QNetwork`, `NoisyLinear` placeholder | Samuel 4 | ⏳ blocked |
-| Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ⏳ blocked |
+| Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ✅ **unblocked** |
 
 Neither blocked task stops anyone today — Max has three tasks before he needs
 Samuel 4, and Daniel has two before he needs Samuel 3. If a block does bite,
