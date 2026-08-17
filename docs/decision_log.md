@@ -759,3 +759,81 @@ Boltzmann. If the real gaps are smaller, it stays close to random for longer, no
 less. Worth re-checking once we have real runs.
 
 **Measured after the change:** 47 tests pass (38 before, 9 new).
+
+---
+
+## 2026-08-18 — Count-based exploration implemented
+
+**Status:** Active. One open question for the team, at the bottom.
+
+**What changed:** Added the third strategy. It keeps a tally of how often the
+agent has seen each situation, and pays a small bonus for being somewhere
+unfamiliar — a lot on the first visit, almost nothing on the hundredth. The agent
+mostly acts greedily, with a constant 5% chance of a random action so it cannot
+get stuck repeating itself forever.
+
+**What it means for the results:** This is the only one of the four strategies
+that changes the *reward*, not just the *action choice*. The bonus only ever
+affects what the agent learns from — every score we report is the maze's real
+reward, with the bonus switched off.
+
+**It counts what the agent sees, not where it is.** The tally is keyed on the raw
+7x7 view, never on the true position. Two different corners of a maze that look
+identical through that window share a tally entry, which makes the bonus blurrier
+than it would otherwise be. We accept that cost on purpose: giving this one
+strategy the true position would mean racing a strategy that knows where it is
+against three that do not, and the comparison would be worthless.
+
+### Open question: the bonus is larger than the maze reward early on
+
+The task file asked us to measure the total bonus collected over one episode and
+compare it against the ~0.9 the maze pays for being solved, and **not** to change
+anything without agreement. Here is the measurement. One 300-step episode with
+100 distinct views, at the current setting of 0.05:
+
+| how often each view has been seen before | bonus collected | discounted | vs maze reward |
+|---|---|---|---|
+| never (start of training) | 11.42 | 3.63 | 12.7x |
+| 10 times | 4.34 | 1.38 | 4.8x |
+| 100 times | 1.49 | 0.47 | 1.7x |
+| 1,000 times | 0.47 | 0.15 | 0.5x |
+| 10,000 times | 0.15 | 0.05 | 0.2x |
+
+So at the very start the novelty bonus is worth about thirteen times solving the
+maze, and it falls below the maze reward once every view has been seen roughly a
+thousand times. Setting the bonus to **0.0039** instead of 0.05 would make the
+first episode come out level with the maze reward.
+
+**We have not changed it, and we should discuss before anyone does.** Two honest
+readings, and we do not yet know which is right:
+
+- *This is fine, possibly necessary.* These mazes pay nothing at all until the
+  agent stumbles onto the goal for the first time. Until that happens the novelty
+  bonus is the only signal it has to learn from. A bonus that starts large and
+  fades as places become familiar is the intended behaviour of this method, not a
+  fault in it.
+- *This is too strong.* An agent paid thirteen times more for sightseeing than
+  for finishing may keep sightseeing well after it knows where the goal is.
+
+**One more thing we noticed but could not measure yet (UNVERIFIED):** how fast the
+bonus fades depends on how many distinct views a maze contains. A small empty room
+has few, so its tallies grow quickly and the bonus dies away early. A six-room
+maze has many more, so its tallies stay low and the bonus stays strong for longer.
+That means this strategy's intrinsic drive is automatically stronger in exactly
+the harder environments — which is either precisely what we want or a confound we
+have to declare, depending on how the results come out. We cannot check it without
+running the environments, so it is written down rather than resolved.
+
+`mean_bonus` goes into `metrics.csv` on every run specifically so this can be
+checked against real return on integration day.
+
+### A smaller trap, for whoever reads the logged numbers
+
+`distinct_keys` counts every key the strategy has ever been *asked about*, not
+only the ones it was told to record. Asking for the bonus of a never-visited
+situation quietly adds it to the tally at zero. In real runs the training loop
+asks about and records the same situation on the same step, so the two coincide
+and the number is honest. It is only misleading if someone calls the bonus
+function on its own, as our tests do.
+
+**Measured after the change:** 56 tests pass (47 before, 9 new).
