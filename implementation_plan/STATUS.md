@@ -13,7 +13,7 @@ Last updated: **2026-08-17**, by Daniel.
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark | — | 3 env factory |
 | **Max** | B — Exploration strategies | — | not started | 1 epsilon-greedy |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging | — | 2 aggregation |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
 ## What is available on `main` right now
 
@@ -26,6 +26,30 @@ Everything below is merged and safe to import.
 | `make_explorer`, `STRATEGIES` | `rlx.exploration` | Max |
 | `ENV_IDS`, `difficulty_index` | `rlx.envs` | Daniel |
 | `RunLogger` | `rlx.logging` | Samuel |
+| `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
+| `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |
+
+Settled by Daniel's task 2:
+- Analysis can be developed with **no real experiments**: the synthetic fixture
+  writes the frozen §5 format (`steps` int64, `counts` int32 `(T, W, H, 4)`).
+- The fixture ships **two** datasets: the default has the hypothesis baked in
+  (within-instance Spearman 0.58–0.93, rising with difficulty), `--no-effect`
+  has none (−0.22 to +0.15, no significance). Task 4 must pass **both**.
+- **Task 4 requirement:** an instance where every run scores the same has an
+  undefined within-instance correlation. Report those as "no variance, excluded",
+  never as a silent `NaN`. This is a plausible real outcome for `DoorKey-10` and
+  `MultiRoom-N6`, not just a fixture artefact.
+- **`difficulty` is comparable only within a family** — grid size for
+  Empty/DoorKey, room count for MultiRoom. Never sort or correlate across
+  families on it; group by `family` first.
+
+**For Samuel — one question from Daniel's task 2 review.** `final_return` is
+defined in spec §7.1 as the mean of the **last 5 evaluation points**, but
+`metrics.csv` holds one row per *logged* step. If `train.py` logs `loss` more
+often than it evaluates, most rows carry an empty `eval_return_mean`.
+`rlx.analysis.aggregate.final_return` now drops the empty entries before taking
+the tail, so it is correct either way — but if you intend to log at a different
+cadence than you evaluate, say so, because it changes how `metrics.csv` looks.
 
 Settled by Samuel's task 2, no longer provisional:
 - `device: cpu` — measured, the GPU is 13% slower. **Do not install a CUDA torch.**

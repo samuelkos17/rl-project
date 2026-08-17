@@ -20,10 +20,23 @@ experiments.
 
 ---
 
-- [ ] **Step 1: Write the synthetic results generator**
+- [x] **Step 1: Write the synthetic results generator**
 
 Create `scripts/make_synthetic_results.py`. This is your development fixture for
 the rest of the week — build it first.
+
+> **SUPERSEDED 2026-08-17 — the return model below is NOT what was shipped.**
+> The line `solved = rng.random() < np.clip(1.3 * early_auc - difficulty * 0.7,
+> 0.02, 0.97)` evaluates negative for **all four strategies** on DoorKey
+> (-0.02 to -0.11) and MultiRoom (-0.39 to -0.46), so `np.clip` collapses them
+> onto the identical floor `0.02`. With 5 seeds that yields `final_return ==
+> 0.0` for all 20 runs of 4 of the 6 instances, i.e. zero variance, i.e.
+> `spearmanr` returns `NaN` for the within-instance test of `CLAUDE.md` §9.
+> The shipped version replaces the Bernoulli draw with a continuous ceiling
+> driven by `advantage = early_auc / _early_auc(1.0, difficulty) - 1.0` and adds
+> a `--no-effect` negative control. Read the file, not this block.
+> Rationale and measured before/after: `docs/decision_log.md`, entry
+> "2026-08-17 — The first version of the fake data had no answer in it".
 
 ```python
 """Generate fake result directories in the real format, for developing analysis
@@ -128,7 +141,7 @@ if __name__ == "__main__":
     print(f"wrote {n} synthetic runs to {args.out}")
 ```
 
-- [ ] **Step 2: Generate the synthetic data and look at it**
+- [x] **Step 2: Generate the synthetic data and look at it**
 
 ```bash
 python scripts/make_synthetic_results.py --out results_synthetic
@@ -150,7 +163,7 @@ print('steps', d['steps'][:5], 'counts', d['counts'].shape)
 
 Add `results_synthetic/` to `.gitignore`.
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 Create `tests/test_aggregate.py`:
 
@@ -207,13 +220,13 @@ def test_incomplete_runs_are_skipped(tmp_path):
     assert load_all(tmp_path) == []
 ```
 
-- [ ] **Step 4: Run and watch them fail**
+- [x] **Step 4: Run and watch them fail**
 
 ```bash
 pytest tests/test_aggregate.py -v
 ```
 
-- [ ] **Step 5: Write `src/rlx/analysis/aggregate.py`**
+- [x] **Step 5: Write `src/rlx/analysis/aggregate.py`**
 
 ```python
 """Load result directories into memory and flatten them into a tidy table."""
@@ -288,7 +301,7 @@ def to_dataframe(runs: list[RunResult]) -> pd.DataFrame:
     ])
 ```
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 ```bash
 pytest tests/test_aggregate.py -v
@@ -296,7 +309,7 @@ pytest tests/test_aggregate.py -v
 
 Expected: 6 passed.
 
-- [ ] **Step 7: Log the change**
+- [x] **Step 7: Log the change**
 
 Append to `docs/decision_log.md`, in plain language:
 

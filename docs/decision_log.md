@@ -409,3 +409,240 @@ Verified afterwards: `torch.__version__` reports `2.13.0+cpu` and
 processor-only torch — which is exactly what the fixed `device: cpu` setting
 assumes. If someone silently ran the graphics-card build, their runs would be
 slower but produce the same numbers.
+
+## 2026-08-17 — We generate fake results to build the analysis against
+
+**Status:** Active
+
+**What changed:** Wrote a script that produces fake experiment folders in exactly
+the same format as real ones. All of the analysis code is developed and tested
+against these before a single real experiment exists.
+
+**Why:** Three of us are working at once and the real results do not arrive until
+the 21st. Without fake data, the analysis work could not start until then, and we
+would be debugging plots and statistics on the last two days with no slack.
+
+**The useful part:** the fake data has a known answer built into it — strategies
+that explore more early are *made* to score better, and more so on harder mazes.
+So when the statistics in task 4 run, we already know what number they should
+produce. If they produce something else, the analysis is broken, and we find that
+out on the 17th instead of the 22nd.
+
+**What it means for the results:** Nothing goes into the report from this. It is
+scaffolding, and the fake folders are gitignored.
+
+## 2026-08-17 — The first version of the fake data had no answer in it
+
+**Status:** Active (supersedes the formula in `implementation_plan/daniel/02-aggregation.md` step 1)
+
+**What changed:** The first version of the generator decided by coin flip whether
+a run solves the maze. The chance of solving was worked out as
+`1.3 x early_exploration - 0.7 x difficulty`, and then squashed into the range
+0.02 to 0.97 so it stays a valid probability.
+
+For the two harder families that sum came out **negative for all four
+strategies** — DoorKey between -0.02 and -0.11, MultiRoom between -0.39 and
+-0.46. Everything negative gets squashed to the same lower limit of 0.02. So all
+four strategies ended up with an identical 2% chance, and with 5 seeds each,
+none of them ever solved. Four of the six fake environments contained nothing but
+zeros.
+
+We replaced the coin flip with a score that depends smoothly on how much the run
+explored early, measured **relative to the plain epsilon-greedy baseline at that
+same difficulty**. That last part is the fix: the amount of early exploration
+naturally shrinks as mazes get harder, so comparing against one fixed number
+punished the hard mazes twice over and pushed them off the bottom of the scale.
+
+**Why it mattered:** the whole point of fake data is that we know the answer in
+advance. Our hypothesis is tested *within* each environment separately (see
+`CLAUDE.md` section 9). An environment where every run scores exactly 0.000 has
+nothing to correlate — the statistics would have returned "not a number" for four
+of six environments, and the one claim we most need to check, that the effect
+gets stronger on harder mazes, could not have been checked at all.
+
+**Measured before and after** (correlation between exploration and final score,
+within each environment; 1.0 is a perfect match, 0.0 is no relationship):
+
+| Environment | before | after |
+|---|---|---|
+| Empty-5 | not defined (all zeros) | 0.58 |
+| Empty-8 | not defined (all zeros) | 0.63 |
+| DoorKey-5 | not defined (all zeros) | 0.82 |
+| DoorKey-8 | not defined (all zeros) | 0.90 |
+| MultiRoom-N2 | not defined (all zeros) | 0.93 |
+| MultiRoom-N4 | not defined (all zeros) | 0.90 |
+
+The numbers now also rise from left to right across the difficulty families,
+which is the pattern our hypothesis predicts.
+
+**We also added a deliberately empty version.** `--no-effect` produces a second
+fake dataset in which the score has *no* relationship to exploration at all. Run
+on that one, the analysis must come back with nothing (measured: correlations
+between -0.22 and +0.15, none of them statistically meaningful).
+
+This second dataset is the honest half of the exercise. Without it we would only
+ever be checking that our analysis can say "yes, there is an effect" — never that
+it can say "no, there isn't". An analysis that says yes to everything is the more
+dangerous failure, because it is the one that would put a false claim in the
+report.
+
+**Is building the answer into the data cheating?** No, and it is worth being
+precise about where the line is. Tuning the *analysis* until the *real* data
+gives the answer we like would be cheating. Making the *fake* data contain a
+pattern, to check whether our measuring instrument detects a pattern it is
+supposed to detect, is a calibration test. The fake data contains no evidence
+about reinforcement learning whatsoever — we wrote every number in it ourselves,
+so it can neither support nor refute the hypothesis.
+
+**One real warning came out of this, and it is for task 4.** The broken version
+accidentally simulated something that may well happen for real: if the hardest
+instances — `DoorKey-10`, `MultiRoom-N6` — are solved by nobody within 400,000
+steps, then their real results will genuinely be all zeros, and the within-
+environment correlation for those instances really will be undefined. Section 7
+of `CLAUDE.md` already says a hard instance failing is a finding rather than a
+bug. Task 4 must therefore **report such instances explicitly as "no variance,
+excluded"** rather than silently emitting "not a number" and letting it flow into
+an average.
+
+**What it means for the results:** Nothing directly — this is all scaffolding and
+none of it is reported. Indirectly it decides whether we can trust the statistics
+when the real numbers arrive on the 21st.
+
+## 2026-08-17 — Full review of tasks 1 and 2, and the ten things it found
+
+**Status:** Active
+
+**What changed:** Before merging the aggregation work we went back over both
+finished pieces — the visit logger from task 1 and the loaders plus fake-data
+generator from task 2 — and checked them line by line against every rule we had
+written down, then deliberately attacked the awkward cases instead of only
+running the happy path. Ten problems came out. Seven are fixed, three are
+knowingly left alone.
+
+Everything that was supposed to be true still is: the logger offers exactly the
+six functions Samuel's training loop calls, the result folders have the agreed
+four files with the agreed shapes, and no coverage number is ever computed
+during a run.
+
+### The two real bugs
+
+**A crashed run could take the whole analysis down with it.** When a run dies
+halfway it leaves behind a folder ending in `.partial`. The loader searched for
+folders starting with `seed` and matched those too, then tried to read the seed
+number out of `seed3.partial` and crashed. Worse than the crash: a half-finished
+run already contains all the files the loader checks for, because they are all
+written *before* the folder is renamed. So even without the crash it would have
+counted an unfinished experiment as a finished one. The loader now only accepts
+a folder whose name is `seed` followed by digits and nothing else.
+
+**The final score was quietly being averaged over the wrong thing.** Our agreed
+definition is "the average of the last five evaluations of a run". What the code
+actually did was "the average of the last five *lines* of the results file".
+Those are only the same thing if the training loop writes a line exactly when it
+evaluates. It probably will not — the file also holds the training loss, which
+is produced far more often. Then most lines have an empty evaluation column,
+and the last five lines might contain only one real evaluation. The code did not
+crash and did not warn; it simply averaged one number instead of five and
+returned a noisier answer than we asked for. It now skips the empty entries
+first.
+
+**Samuel needs to know about the second one.** How often `train.py` writes a
+line decides whether this ever mattered in practice. It is fixed either way, but
+he should be aware the two frequencies are not the same thing.
+
+### Four ways the fake data was not actually fake data
+
+The point of the generator is that the rest of the analysis can be built against
+it without waiting for real experiments. It only earns that if it is
+indistinguishable from real output. In four ways it was not.
+
+**The mazes were all the same size, and the wrong size.** Every fake run used a
+12x12 grid. The real ones are 5x5, 8x8 and — for every MultiRoom — 25x25. Task 3
+has to lay the visit counts over a map of which squares are actually reachable,
+and a 12x12 array does not line up with a 5x5 map. The fixture would have been
+unusable for the very next task. Sizes are now taken from the real environment
+names.
+
+**The visit counters could go down.** Real counters only ever increase — the
+logger adds one and copies. The generator drew fresh random numbers for every
+snapshot, so 37% of squares showed *fewer* visits later than earlier. Coverage
+happened to survive this, because coverage only asks "was this square ever
+visited", and that set did grow correctly. But anything reading the actual
+counts — a heat map, a visit-frequency measure — would have been wrong, and an
+obvious sanity check on real data would have failed on the fake data. Counters
+now accumulate.
+
+**The saved settings file had 5 of its 26 entries.** Any later analysis that
+reads a setting would work on real runs and fail on fake ones. It now writes the
+genuine settings object.
+
+**You could not tell the two fake datasets apart.** We produce a second dataset
+with `--no-effect` in which exploration and score are unrelated, to check the
+analysis does not invent a result out of nothing. Both datasets wrote
+byte-identical settings and metadata files, and both default to the same output
+folder. One absent-minded command would have replaced the good dataset with the
+empty one, and the analysis would then have reported "no effect" — which looks
+exactly like a finding rather than an accident. The metadata now records which
+dataset it is.
+
+### One more, on the boundary between the two pieces
+
+**A run that finished without logging anything could not be read back.** The
+logger writes an empty file in that case and the loader threw an error on it. We
+fixed the reading side rather than the writing side: an empty file is an honest
+description of "nothing was logged", and the rule that matters is that the
+analysis must never fall over on a folder that exists. Such a run now loads with
+an empty table and a final score of "not a number", which is the truthful
+answer.
+
+### Three we deliberately did not fix
+
+Recorded because deciding not to act is also a decision.
+
+**Negative coordinates wrap around silently.** Asking the logger to record
+position -1 quietly increments the last square instead of complaining. MiniGrid
+never produces a negative position, so this can only be reached by a bug
+elsewhere, and guarding it would add a check to the one function that runs on
+every single step of all 260 experiments. Positions that are too *large* already
+fail loudly, which is the case that could plausibly happen.
+
+**Overwriting an existing result folder has a one-instant gap.** If a finished
+folder is already there, the logger deletes it and then renames the new one into
+place. A crash exactly between those two operations loses the old data without
+putting anything back. The sweep runner skips folders that already exist, so
+this should never run at all; making it fully safe would mean a three-step
+rename dance for a situation we have designed out.
+
+**An empty list of runs produces a table with no columns**, and asking that
+table for a column then fails with a confusing message. It only happens if you
+point the analysis at a folder with no results in it. We would rather see the
+confusing message than add a guard to every function.
+
+### A trap that is nobody's bug
+
+The `difficulty` column is **not comparable between families**. For Empty and
+DoorKey it is the grid size; for MultiRoom it is the number of rooms. So Empty-16
+carries a 16 and MultiRoom-N6 carries a 6, and sorting everything by that column
+would claim the six-room maze is easier than an empty 16x16 room. It is not. Any
+plot of "effect against difficulty" has to be drawn one family at a time. This
+is now written into the function that builds the table, next to the column.
+
+### One simplification that remains
+
+The fake mazes have no walls — every square is treated as visitable, while a
+real 5x5 Empty has a solid border and only 3x3 usable squares. This is harmless,
+because task 3 measures coverage against the set of genuinely reachable squares
+and anything outside it simply drops out of the calculation. It is written down
+here so nobody rediscovers it as a bug.
+
+**What it means for the results:** No number in the report comes from any of
+this. Two of the fixes, though, are the difference between an analysis that
+crashes or quietly misreports and one that does not, and four are the difference
+between a practice dataset that supports the next three tasks and one that does
+not.
+
+**Measured after the changes:** 30 tests pass. On the dataset with the effect
+built in, the within-maze link between exploration and score is 0.53 to 0.93 and
+rises across the three families, as the hypothesis predicts. On the empty
+dataset it is -0.17 to +0.14 with nothing statistically meaningful. Both
+datasets regenerate byte-for-byte identically.
