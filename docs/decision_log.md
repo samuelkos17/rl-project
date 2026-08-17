@@ -646,3 +646,194 @@ built in, the within-maze link between exploration and score is 0.53 to 0.93 and
 rises across the three families, as the hypothesis predicts. On the empty
 dataset it is -0.17 to +0.14 with nothing statistically meaningful. Both
 datasets regenerate byte-for-byte identically.
+
+---
+
+## 2026-08-18 — Epsilon-greedy baseline implemented
+
+**Status:** Active
+
+**What changed:** Added our baseline exploration strategy. With probability
+"epsilon" the agent throws away what it has learned and picks a random action;
+otherwise it does what it thinks is best. Epsilon starts at 1.0 (everything
+random, because at the start the agent knows nothing) and drops in a straight
+line to 0.05 over the first fifth of training, then stays at 0.05 for the rest.
+
+**Why:** It is the standard baseline that every other strategy gets compared
+against, and it is deliberately the dumbest of the four.
+
+**What it means for the results:** The 0.05 floor means the agent always keeps a
+little randomness rather than becoming completely predictable. If a smarter
+strategy cannot beat this one, that is a genuinely interesting finding, not a
+bug.
+
+**Two small things worth knowing:**
+
+The random branch draws from **all seven actions**, including the one the agent
+already thinks is best. So the true chance of acting randomly-and-differently is
+slightly below epsilon. Both definitions are defensible; this is the standard
+one, and a test pins it down so nobody "fixes" it later.
+
+The decay length is worked out once when the strategy is built, but the start and
+end values are read fresh on every step. That is not a principled distinction —
+it is just how the code fell out — and one test leans on it by lowering the end
+value after construction. Worth knowing before anyone edits this file.
+
+**Measured after the change:** 38 tests pass (30 before, 8 new). The whole suite
+runs in 5.79 seconds.
+
+**Also noticed, not changed:** installing on Linux pulled the graphics-card
+version of torch again — the same trap Daniel logged on 2026-08-17, now hit by a
+second person, because `requirements.txt` does not say which version to fetch.
+It costs 3.4 GB of disk and changes no result, since `device: cpu` is fixed. A
+one-line pin in `requirements.txt` would stop the third person hitting it.
+
+---
+
+## 2026-08-18 — Boltzmann exploration implemented
+
+**Status:** Active
+
+**What changed:** Added the second strategy. Instead of "best action, or a
+completely random one", it picks each action with a probability based on how good
+the agent thinks it is. A second-best action gets chosen fairly often; an action
+the agent rates as useless almost never does.
+
+The "temperature" controls how picky it is: high temperature means nearly random,
+low temperature means nearly always the best action. We start at 1.0 and shrink it
+to 0.05 over the first 40% of training. Our professor specifically asked us to
+write this schedule down, so it is in the spec too.
+
+**One implementation detail worth recording:** the maths involves raising e to the
+power of (Q divided by temperature). At low temperatures that number gets
+astronomically large and the computer gives up and returns "infinity", which
+poisons everything downstream. The standard fix is subtracting the largest Q-value
+first, which changes nothing mathematically but keeps the numbers small. We have a
+test for it, and we checked that the test genuinely catches the problem: without
+the fix the probabilities come out as `[nan nan 0. 0. nan nan nan]`.
+
+### A trap that is nobody's bug: temperature only means something relative to the Q-values
+
+Epsilon-greedy does not care how large the Q-values are. If you multiply every
+Q-value by ten, it behaves identically. **Boltzmann is not like that.** What
+matters to it is the size of the *differences* between Q-values compared to the
+temperature.
+
+That matters here because MiniGrid's scores are small. We checked the installed
+source: a successful episode scores `1 - 0.9 * (steps taken / step limit)`, so
+between 0.1 and 1.0, and a failed one scores 0. So the gap between the best and
+worst action can never exceed about 0.9, and early in training — when the network
+is barely trained and almost nothing has been rewarded yet — it is far smaller
+than that.
+
+The practical effect, measured on the real 400,000-step budget:
+
+| step | temperature |
+|---|---|
+| 0 | 1.00 |
+| 20,000 | 0.69 |
+| 40,000 | 0.47 |
+| 80,000 | 0.22 |
+| 160,000 and after | 0.05 |
+
+At temperature 1.0, even with the largest gap the environment can produce, the
+best action only gets picked about 26% of the time against 14% for a coin-flip
+across all seven. In other words, early Boltzmann is close to picking at random.
+It only starts genuinely favouring good actions once the temperature drops below
+about 0.2, which happens at step 85,959 — **just after the 80,000-step window
+closes that we measure early exploration over.**
+
+**What this means for the results:** if Boltzmann turns out to have high early
+coverage, we cannot immediately claim that its cleverness caused it — during most
+of the window we measure, it is behaving a lot like uniform random. The report has
+to say this. It is exactly the sort of thing our professor would ask about.
+
+**We changed nothing.** The schedule is the one in the spec, and tuning a strategy
+to make it look good is forbidden. This is written down as something to interpret,
+not something to fix.
+
+**Honestly uncertain:** how far apart the Q-values actually drift during training
+is not something we can know before running the experiments. The numbers above use
+the widest gap the environment allows, which is the most generous case for
+Boltzmann. If the real gaps are smaller, it stays close to random for longer, not
+less. Worth re-checking once we have real runs.
+
+**Measured after the change:** 47 tests pass (38 before, 9 new).
+
+---
+
+## 2026-08-18 — Count-based exploration implemented
+
+**Status:** Active. One open question for the team, at the bottom.
+
+**What changed:** Added the third strategy. It keeps a tally of how often the
+agent has seen each situation, and pays a small bonus for being somewhere
+unfamiliar — a lot on the first visit, almost nothing on the hundredth. The agent
+mostly acts greedily, with a constant 5% chance of a random action so it cannot
+get stuck repeating itself forever.
+
+**What it means for the results:** This is the only one of the four strategies
+that changes the *reward*, not just the *action choice*. The bonus only ever
+affects what the agent learns from — every score we report is the maze's real
+reward, with the bonus switched off.
+
+**It counts what the agent sees, not where it is.** The tally is keyed on the raw
+7x7 view, never on the true position. Two different corners of a maze that look
+identical through that window share a tally entry, which makes the bonus blurrier
+than it would otherwise be. We accept that cost on purpose: giving this one
+strategy the true position would mean racing a strategy that knows where it is
+against three that do not, and the comparison would be worthless.
+
+### Open question: the bonus is larger than the maze reward early on
+
+The task file asked us to measure the total bonus collected over one episode and
+compare it against the ~0.9 the maze pays for being solved, and **not** to change
+anything without agreement. Here is the measurement. One 300-step episode with
+100 distinct views, at the current setting of 0.05:
+
+| how often each view has been seen before | bonus collected | discounted | vs maze reward |
+|---|---|---|---|
+| never (start of training) | 11.42 | 3.63 | 12.7x |
+| 10 times | 4.34 | 1.38 | 4.8x |
+| 100 times | 1.49 | 0.47 | 1.7x |
+| 1,000 times | 0.47 | 0.15 | 0.5x |
+| 10,000 times | 0.15 | 0.05 | 0.2x |
+
+So at the very start the novelty bonus is worth about thirteen times solving the
+maze, and it falls below the maze reward once every view has been seen roughly a
+thousand times. Setting the bonus to **0.0039** instead of 0.05 would make the
+first episode come out level with the maze reward.
+
+**We have not changed it, and we should discuss before anyone does.** Two honest
+readings, and we do not yet know which is right:
+
+- *This is fine, possibly necessary.* These mazes pay nothing at all until the
+  agent stumbles onto the goal for the first time. Until that happens the novelty
+  bonus is the only signal it has to learn from. A bonus that starts large and
+  fades as places become familiar is the intended behaviour of this method, not a
+  fault in it.
+- *This is too strong.* An agent paid thirteen times more for sightseeing than
+  for finishing may keep sightseeing well after it knows where the goal is.
+
+**One more thing we noticed but could not measure yet (UNVERIFIED):** how fast the
+bonus fades depends on how many distinct views a maze contains. A small empty room
+has few, so its tallies grow quickly and the bonus dies away early. A six-room
+maze has many more, so its tallies stay low and the bonus stays strong for longer.
+That means this strategy's intrinsic drive is automatically stronger in exactly
+the harder environments — which is either precisely what we want or a confound we
+have to declare, depending on how the results come out. We cannot check it without
+running the environments, so it is written down rather than resolved.
+
+`mean_bonus` goes into `metrics.csv` on every run specifically so this can be
+checked against real return on integration day.
+
+### A smaller trap, for whoever reads the logged numbers
+
+`distinct_keys` counts every key the strategy has ever been *asked about*, not
+only the ones it was told to record. Asking for the bonus of a never-visited
+situation quietly adds it to the tally at zero. In real runs the training loop
+asks about and records the same situation on the same step, so the two coincide
+and the number is honest. It is only misleading if someone calls the bonus
+function on its own, as our tests do.
+
+**Measured after the change:** 56 tests pass (47 before, 9 new).

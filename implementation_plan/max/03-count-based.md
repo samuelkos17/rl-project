@@ -56,7 +56,7 @@ is handed. But you should understand it, because you may be asked in the exam.
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_exploration/test_count_based.py`:
 
@@ -135,7 +135,7 @@ def test_reports_mean_bonus_for_logging(cfg, rng, q_values, key):
     assert "epsilon" in c.stats()
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_exploration/test_count_based.py -v
@@ -143,7 +143,7 @@ pytest tests/test_exploration/test_count_based.py -v
 
 Expected: `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `src/rlx/exploration/count_based.py`:
 
@@ -199,7 +199,7 @@ Note `defaultdict(int)` means reading an unseen key inserts it with count 0 —
 which is why `max(..., 1)` is there rather than relying on the count being at
 least 1.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 ```bash
 pytest tests/test_exploration/test_count_based.py -v
@@ -207,7 +207,7 @@ pytest tests/test_exploration/test_count_based.py -v
 
 Expected: 9 passed.
 
-- [ ] **Step 5: Check the bonus scale against real reward**
+- [x] **Step 5: Check the bonus scale against real reward**
 
 `beta = 0.05` is provisional. MiniGrid gives a return between 0 and 1 for solving
 the maze, so if the total intrinsic bonus collected over an episode swamps that,

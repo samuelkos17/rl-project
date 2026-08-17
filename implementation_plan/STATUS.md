@@ -3,7 +3,7 @@
 **Update this whenever you finish a task, before you open the PR.** It is the one
 place the other two look to answer "can I start yet?".
 
-Last updated: **2026-08-17**, by Daniel.
+Last updated: **2026-08-18**, by Max.
 
 ---
 
@@ -12,7 +12,7 @@ Last updated: **2026-08-17**, by Daniel.
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark | — | 3 env factory |
-| **Max** | B — Exploration strategies | — | not started | 1 epsilon-greedy |
+| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
 ## What is available on `main` right now
@@ -26,6 +26,10 @@ Everything below is merged and safe to import.
 | `make_explorer`, `STRATEGIES` | `rlx.exploration` | Max |
 | `ENV_IDS`, `difficulty_index` | `rlx.envs` | Daniel |
 | `RunLogger` | `rlx.logging` | Samuel |
+| `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
+| `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
+| `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
+| `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
 | `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |
 
@@ -50,6 +54,17 @@ often than it evaluates, most rows carry an empty `eval_return_mean`.
 `rlx.analysis.aggregate.final_return` now drops the empty entries before taking
 the tail, so it is correct either way — but if you intend to log at a different
 cadence than you evaluate, say so, because it changes how `metrics.csv` looks.
+
+**For Samuel and Daniel — one question from Max's task 3.** `count_beta = 0.05`
+is provisional and the task file told us to measure it before trusting it. Over
+one 300-step episode with 100 distinct views, the intrinsic bonus totals **11.42**
+against a maze reward of ~0.9 — **12.7x** — falling below the maze reward only
+once every view has been seen ~1,000 times. `count_beta = 0.0039` would put the
+first episode level with the maze reward. **Nothing was changed.** It may well be
+correct as is, since these mazes pay nothing at all until the goal is first
+reached, so early on the bonus is the only learning signal there is. Decide
+together before anyone edits `config.py`; full numbers in `docs/decision_log.md`
+under "2026-08-18 — Count-based exploration implemented".
 
 Settled by Samuel's task 2, no longer provisional:
 - `device: cpu` — measured, the GPU is 13% slower. **Do not install a CUDA torch.**

@@ -29,7 +29,7 @@ deterministic and stuck.
 
 ---
 
-- [ ] **Step 1: Create the shared test fixtures**
+- [x] **Step 1: Create the shared test fixtures**
 
 Create `tests/test_exploration/__init__.py` (empty) and
 `tests/test_exploration/conftest.py`. Every later task uses these.
@@ -69,7 +69,7 @@ def key():
     return b"fake-observation-bytes"
 ```
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `tests/test_exploration/test_epsilon_greedy.py`:
 
@@ -136,7 +136,7 @@ def test_is_reproducible_for_a_fixed_rng_seed(cfg, q_values, key):
     assert actions() == actions()
 ```
 
-- [ ] **Step 3: Run and watch them fail**
+- [x] **Step 3: Run and watch them fail**
 
 ```bash
 pytest tests/test_exploration/test_epsilon_greedy.py -v
@@ -144,7 +144,7 @@ pytest tests/test_exploration/test_epsilon_greedy.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.exploration.epsilon_greedy'`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 Create `src/rlx/exploration/epsilon_greedy.py`:
 
@@ -180,7 +180,7 @@ class EpsilonGreedy(Explorer):
         return {"epsilon": self._epsilon}
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 ```bash
 pytest tests/test_exploration/test_epsilon_greedy.py -v
@@ -193,7 +193,7 @@ branch draws from **all** actions, not from the non-greedy ones only. Both are
 defensible definitions of epsilon-greedy, but ours is the standard one and the
 test encodes it.
 
-- [ ] **Step 6: Check it is reachable through the factory**
+- [x] **Step 6: Check it is reachable through the factory**
 
 ```bash
 python -c "
