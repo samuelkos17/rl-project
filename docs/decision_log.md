@@ -211,3 +211,56 @@ time on one GPU.
 
 **What it means for the results:** Nothing scientific. It decides how long we
 wait.
+
+---
+
+## 2026-08-17 — Package skeleton and the three frozen interfaces
+
+**Status:** Active
+
+**What changed:** Created the `rlx` package, the run configuration, and the
+exploration-strategy interface. These three things are now "frozen", meaning we
+agreed not to change them without telling each other. Max and Daniel can start.
+
+**Why:** All three of us are writing code at the same time. If we each invented
+our own idea of what a config looks like, nothing would fit together on
+integration day. Agreeing on the shapes first means we can work independently.
+
+**What it means for the results:** Nothing. Plumbing.
+
+**Environment we ended up with:** Python 3.11.15 in a conda env called `rl`.
+Notable versions, because they are newer than the plan assumed: minigrid 3.1.0,
+torch 2.13.0, numpy 2.4.6, pandas 3.0.5, rliable 1.2.0. The plan was written
+against minigrid 2.x, so task 2's API check matters more than we thought — see
+the next entry.
+
+---
+
+## 2026-08-17 — pip installed a CPU-only torch, which task 2 must know about
+
+**Status:** Open — decide during task 2
+
+**What changed:** Nothing yet. Recording a trap we walked into and spotted.
+
+**What happened:** `pip install torch` on Windows quietly gives you a build with
+no graphics-card support at all (it calls itself `2.13.0+cpu`). Torch happily
+reports "no GPU available" — not "you installed the wrong version".
+
+**Why this matters:** task 2 is supposed to measure whether our runs are faster
+on the processor or on the graphics card. With this build, that measurement
+cannot happen: it would report "no GPU" and we would write down "the GPU is
+unusable", which is simply false. Samuel's machine has an RTX 3060 Ti.
+
+**What to do about it:** before running the benchmark in task 2, decide one of:
+(a) reinstall torch with graphics-card support using
+`pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu124`
+and then benchmark both properly, or
+(b) consciously decide we are running on the processor only, and write that in
+the report as a choice rather than pretending we measured it.
+
+Either is defensible. Silently benchmarking a CPU-only build and calling it a
+CPU-vs-GPU comparison is not. There is a note about this at the top of
+`requirements.txt` so nobody hits it by surprise.
+
+**What it means for the results:** Only how long we wait for the sweep. It does
+not change any number in the report.

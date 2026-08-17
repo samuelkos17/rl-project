@@ -97,6 +97,27 @@ write a base class for one implementation. Do not add a feature nobody asked for
 If you are about to write a file longer than ~200 lines, stop and ask whether it
 is doing too much.
 
+### Rule 7 — Never run `git add` or `git commit`. Report instead.
+**We commit our own work. You never do.**
+
+Do not run `git add`, `git commit`, `git push`, `git merge`, `git rebase`,
+`git checkout -b`, or anything else that writes to git history or the staging
+area. Read-only git commands (`git status`, `git diff`, `git log`) are fine and
+often useful.
+
+When a piece of work is finished, **stop and say so**, and give us:
+- what changed, as a list of file paths
+- the test command you ran and its actual output
+- a suggested commit message we can copy
+
+Then wait. Do not stage anything "to be helpful" — an unexpected staged change is
+worse than no help at all, because we might commit something we never reviewed.
+
+**This overrides the plan files.** `implementation_plan/**` contains steps like
+"Step N: Commit" with `git add` / `git commit` commands in them. Those commands
+are **for us to run, not for you**. When you reach such a step, treat it as
+"report that this task is done" and stop there.
+
 ---
 
 ## 3. Tech stack
@@ -128,6 +149,16 @@ conda activate rl
 pip install -r requirements.txt
 pip install -e .
 ```
+
+**Every team member does this on their own machine** — the environment is not in
+git, so cloning the repo gives you the code but nothing to run it with. Verify
+with `pytest -q`. A `ModuleNotFoundError: No module named 'rlx'` means
+`pip install -e .` was skipped; it is not a broken commit.
+
+`pip install torch` on Windows yields a **CPU-only** build (`torch==X.Y.Z+cpu`,
+`torch.cuda.is_available() == False`). That is fine for workstreams B and C. See
+`docs/decision_log.md`, entry "pip installed a CPU-only torch", before running
+the task-2 benchmark.
 
 ---
 
@@ -365,6 +396,9 @@ single correlation is wrong. Reject it.
 ---
 
 ## 10. Git workflow
+
+**All of this is done by us, the three humans. Claude never runs a git command
+that changes anything — see Rule 7.**
 
 - Branches: `core/<topic>` (Samuel), `exploration/<topic>` (Max),
   `analysis/<topic>` (Daniel).
