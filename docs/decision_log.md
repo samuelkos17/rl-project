@@ -646,3 +646,44 @@ built in, the within-maze link between exploration and score is 0.53 to 0.93 and
 rises across the three families, as the hypothesis predicts. On the empty
 dataset it is -0.17 to +0.14 with nothing statistically meaningful. Both
 datasets regenerate byte-for-byte identically.
+
+---
+
+## 2026-08-18 — Epsilon-greedy baseline implemented
+
+**Status:** Active
+
+**What changed:** Added our baseline exploration strategy. With probability
+"epsilon" the agent throws away what it has learned and picks a random action;
+otherwise it does what it thinks is best. Epsilon starts at 1.0 (everything
+random, because at the start the agent knows nothing) and drops in a straight
+line to 0.05 over the first fifth of training, then stays at 0.05 for the rest.
+
+**Why:** It is the standard baseline that every other strategy gets compared
+against, and it is deliberately the dumbest of the four.
+
+**What it means for the results:** The 0.05 floor means the agent always keeps a
+little randomness rather than becoming completely predictable. If a smarter
+strategy cannot beat this one, that is a genuinely interesting finding, not a
+bug.
+
+**Two small things worth knowing:**
+
+The random branch draws from **all seven actions**, including the one the agent
+already thinks is best. So the true chance of acting randomly-and-differently is
+slightly below epsilon. Both definitions are defensible; this is the standard
+one, and a test pins it down so nobody "fixes" it later.
+
+The decay length is worked out once when the strategy is built, but the start and
+end values are read fresh on every step. That is not a principled distinction —
+it is just how the code fell out — and one test leans on it by lowering the end
+value after construction. Worth knowing before anyone edits this file.
+
+**Measured after the change:** 38 tests pass (30 before, 8 new). The whole suite
+runs in 5.79 seconds.
+
+**Also noticed, not changed:** installing on Linux pulled the graphics-card
+version of torch again — the same trap Daniel logged on 2026-08-17, now hit by a
+second person, because `requirements.txt` does not say which version to fetch.
+It costs 3.4 GB of disk and changes no result, since `device: cpu` is fixed. A
+one-line pin in `requirements.txt` would stop the third person hitting it.

@@ -3,7 +3,7 @@
 **Update this whenever you finish a task, before you open the PR.** It is the one
 place the other two look to answer "can I start yet?".
 
-Last updated: **2026-08-17**, by Daniel.
+Last updated: **2026-08-18**, by Max.
 
 ---
 
@@ -12,7 +12,7 @@ Last updated: **2026-08-17**, by Daniel.
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark | — | 3 env factory |
-| **Max** | B — Exploration strategies | — | not started | 1 epsilon-greedy |
+| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy | — | 2 boltzmann |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
 ## What is available on `main` right now
@@ -26,6 +26,8 @@ Everything below is merged and safe to import.
 | `make_explorer`, `STRATEGIES` | `rlx.exploration` | Max |
 | `ENV_IDS`, `difficulty_index` | `rlx.envs` | Daniel |
 | `RunLogger` | `rlx.logging` | Samuel |
+| `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
+| `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
 | `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |
 
