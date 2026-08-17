@@ -27,6 +27,34 @@ in the PR description — do not edit it silently.
 
 ---
 
+## First-time setup — every one of us, on every machine
+
+**Do this before your first task.** The conda environment is not in git; cloning
+the repo gives you the code but no Python to run it with.
+
+```bash
+conda create -n rl python=3.11 -y
+```
+
+```bash
+conda activate rl && pip install -r requirements.txt && pip install -e .
+```
+
+Check it worked:
+
+```bash
+pytest -q
+```
+
+You should see **8 passed**. If instead you see
+`ModuleNotFoundError: No module named 'rlx'`, you skipped `pip install -e .` —
+that is what makes the `rlx` package importable from anywhere. Nothing is broken
+on anyone else's side.
+
+Remember `conda activate rl` in every new terminal.
+
+---
+
 ## The one blocking dependency
 
 **Samuel's Task 1 (`samuel/01-scaffold-and-contracts.md`) must be merged to
@@ -98,6 +126,11 @@ From `CLAUDE.md` §2. Repeated here because they are easy to skip:
 5. **Log every real change in `docs/decision_log.md`**, including discarded ones,
    in plain language for the team.
 6. **Less code is better.** No abstraction for one implementation.
+7. **Claude never runs `git add` or `git commit`.** The "Step N: Commit" steps in
+   these task files, and every `git add` / `git commit` command inside them, are
+   **for us to run**. When Claude reaches one, it stops and reports what changed,
+   what it tested, and a suggested commit message. We review and commit. See
+   `CLAUDE.md` Rule 7.
 
 ---
 

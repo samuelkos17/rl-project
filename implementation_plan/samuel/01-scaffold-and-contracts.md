@@ -68,16 +68,29 @@ where = ["src"]
 testpaths = ["tests"]
 ```
 
-- [ ] **Step 4: Install**
+- [ ] **Step 4: Install the dependencies**
 
 ```bash
 pip install -r requirements.txt
-pip install -e .
 ```
+
+`pip install -e .` comes later, in step 7 — `src/rlx/` does not exist yet, so
+running it now would install an empty package.
 
 Expected: no errors. **If `rliable` or `minigrid` fails to install, stop and
 report it — do not substitute a different package.** Record the failure in
 `docs/decision_log.md`.
+
+**Then check what torch you actually got:**
+
+```bash
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+If it prints something ending in `+cpu` with `False`, pip gave you a CPU-only
+build — which is the default on Windows. That is fine for now, but **task 2's
+CPU-vs-GPU benchmark cannot measure a GPU with this build.** See the
+`docs/decision_log.md` entry "pip installed a CPU-only torch" and decide there.
 
 - [ ] **Step 5: Write the failing test for `RunConfig`**
 
@@ -183,9 +196,12 @@ def load_base_config(path: Path) -> dict:
         return yaml.safe_load(f).get("defaults", {})
 ```
 
-- [ ] **Step 8: Run the test and watch it pass**
+- [ ] **Step 8: Install the package, then run the test and watch it pass**
+
+Now that `src/rlx/` exists, the editable install has something to find:
 
 ```bash
+pip install -e .
 pytest tests/test_config.py -v
 ```
 

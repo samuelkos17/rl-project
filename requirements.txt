@@ -1,0 +1,17 @@
+# NOTE: plain `pip install torch` gives a CPU-ONLY wheel on Windows (torch+cpu).
+# That is fine for workstreams B and C, and may well be fine for the sweep too --
+# but task 2's CPU-vs-GPU benchmark cannot measure the GPU with this wheel, it can
+# only report "cuda unavailable". To benchmark the GPU, reinstall with:
+#   pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu124
+# See docs/decision_log.md.
+torch>=2.0
+gymnasium>=0.29
+minigrid>=2.3
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+matplotlib>=3.7
+rliable>=1.0.8
+pyyaml>=6.0
+pytest>=7.4
+tabulate>=0.9

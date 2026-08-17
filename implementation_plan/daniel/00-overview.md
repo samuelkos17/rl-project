@@ -19,6 +19,31 @@ experiment.
 
 ---
 
+## Before your first task: set up your environment
+
+The conda environment is not in git. Cloning the repo gives you the code but no
+Python to run it with. Do this once, on your machine:
+
+```bash
+conda create -n rl python=3.11 -y
+```
+
+```bash
+conda activate rl && pip install -r requirements.txt && pip install -e .
+```
+
+Verify:
+
+```bash
+pytest -q
+```
+
+Expect **8 passed** (Samuel's scaffold). If you get
+`ModuleNotFoundError: No module named 'rlx'`, you skipped `pip install -e .` —
+nothing is broken on Samuel's side. Run `conda activate rl` in every new terminal.
+
+---
+
 ## Tasks in order
 
 | # | File | Deliverable | Depends on |

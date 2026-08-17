@@ -1,0 +1,28 @@
+# The full 260-run matrix: 13 environment instances x 4 strategies x 5 seeds.
+defaults:
+  total_steps: 400000     # provisional -- confirmed by task 2's benchmark
+  device: cpu             # provisional -- confirmed by task 2's benchmark
+  results_root: results
+
+env_ids:
+  - Empty-5
+  - Empty-8
+  - Empty-16
+  - DoorKey-5
+  - DoorKey-6
+  - DoorKey-7
+  - DoorKey-8
+  - DoorKey-10
+  - MultiRoom-N2
+  - MultiRoom-N3
+  - MultiRoom-N4
+  - MultiRoom-N5
+  - MultiRoom-N6
+
+strategies:
+  - epsilon_greedy
+  - boltzmann
+  - count_based
+  - noisy
+
+seeds: [0, 1, 2, 3, 4]
