@@ -1,7 +1,10 @@
 # The full 260-run matrix: 13 environment instances x 4 strategies x 5 seeds.
 defaults:
-  total_steps: 400000     # provisional -- confirmed by task 2's benchmark
-  device: cpu             # provisional -- confirmed by task 2's benchmark
+  # Both confirmed by task 2's benchmark on 2026-08-17, not assumed.
+  # CPU 630 steps/s vs CUDA 550 steps/s on an RTX 3060 Ti -- the GPU is slower
+  # for a network this small. See docs/decision_log.md.
+  total_steps: 400000
+  device: cpu
   results_root: results
 
 env_ids:

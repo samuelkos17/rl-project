@@ -323,8 +323,12 @@ visits to every `(x, y, direction)`, taken from `env.unwrapped.agent_pos` and
 `agent_dir`. The array is snapshotted every `snapshot_every` steps into
 `visitation.npz` as `steps (T,)` and `counts (T, W, H, 4)`.
 
-Sizes are trivial: `16 * 16 * 4 = 1024` integers per snapshot, 40 snapshots per
-run — about 1 KB each before compression.
+Sizes are small. The array is sized from the actual grid, and MiniGrid's
+`MultiRoom` is **25x25 for every N** (verified 2026-08-17), not the 16x16 this
+document originally assumed. So the largest case is `25 * 25 * 4 = 2500`
+integers per snapshot (~10 KB as int32), 40 snapshots per run, giving ~400 KB
+per MultiRoom run before compression. `savez_compressed` on a mostly-zero array
+shrinks this substantially. Whole-sweep total is on the order of tens of MB.
 
 **No coverage metric is computed during training.** All metrics are derived from
 these snapshots later. This is a deliberate separation: metric definitions can be
@@ -537,7 +541,7 @@ visitation arrays — so neither is blocked if A slips.
 | Integration on day 3 fails | Medium | Runnable skeleton exists on day 0; daily rebase and evening PR merges make integration continuous. |
 | One person falls behind | Medium | Synthetic-data development means no workstream hard-blocks another. Core is the only critical path. |
 | Count bonus scale wrong (`beta`) | Medium | Checked in the pilot sweep; `mean_bonus` is logged in `metrics.csv` precisely so it can be compared against extrinsic return. |
-| Results too large for git | Low | Only kilobytes per run. 260 runs is a few MB. |
+| Results too large for git | Low | ~400 KB per MultiRoom run uncompressed, less for smaller grids; tens of MB across 260 runs after compression. Measure before the final commit. |
 
 ---
 

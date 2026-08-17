@@ -27,6 +27,9 @@ in the PR description — do not edit it silently.
 
 ---
 
+**Who is on what right now: [`STATUS.md`](STATUS.md).** Update it when you
+finish a task, before opening your PR.
+
 ## First-time setup — every one of us, on every machine
 
 **Do this before your first task.** The conda environment is not in git; cloning

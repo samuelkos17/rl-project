@@ -19,6 +19,9 @@ changes one line.
 
 ---
 
+**Where everyone is: [`../STATUS.md`](../STATUS.md).** You unblock the other two,
+so keep it current.
+
 ## Tasks in order
 
 | # | File | Deliverable | Blocks others? |
