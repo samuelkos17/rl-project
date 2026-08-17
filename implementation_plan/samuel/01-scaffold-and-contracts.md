@@ -18,7 +18,7 @@ them it is merged.** It is mechanical: mostly copy-paste. Target: 30 minutes.
 
 ---
 
-- [ ] **Step 1: Create the conda environment**
+- [x] **Step 1: Create the conda environment**
 
 ```bash
 conda create -n rl python=3.11 -y
@@ -29,7 +29,7 @@ Do **not** use the base Anaconda 3.13 environment. `rliable` and parts of the
 MiniGrid stack lag the newest Python, and a dependency fight costs a day we do
 not have.
 
-- [ ] **Step 2: Write `requirements.txt`**
+- [x] **Step 2: Write `requirements.txt`**
 
 ```
 torch>=2.0
@@ -49,7 +49,7 @@ tabulate>=0.9
 `ImportError` without it, and Daniel's report generator is built entirely on
 `to_markdown`.
 
-- [ ] **Step 3: Write `pyproject.toml`**
+- [x] **Step 3: Write `pyproject.toml`**
 
 ```toml
 [build-system]
@@ -68,7 +68,7 @@ where = ["src"]
 testpaths = ["tests"]
 ```
 
-- [ ] **Step 4: Install the dependencies**
+- [x] **Step 4: Install the dependencies**
 
 ```bash
 pip install -r requirements.txt
@@ -92,7 +92,7 @@ build — which is the default on Windows. That is fine for now, but **task 2's
 CPU-vs-GPU benchmark cannot measure a GPU with this build.** See the
 `docs/decision_log.md` entry "pip installed a CPU-only torch" and decide there.
 
-- [ ] **Step 5: Write the failing test for `RunConfig`**
+- [x] **Step 5: Write the failing test for `RunConfig`**
 
 Create `tests/test_config.py`:
 
@@ -115,7 +115,7 @@ def test_defaults_match_the_spec():
     assert cfg.eval_episodes == 1
 ```
 
-- [ ] **Step 6: Run it and watch it fail**
+- [x] **Step 6: Run it and watch it fail**
 
 ```bash
 pytest tests/test_config.py -v
@@ -123,7 +123,7 @@ pytest tests/test_config.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.config'`.
 
-- [ ] **Step 7: Write `src/rlx/config.py`**
+- [x] **Step 7: Write `src/rlx/config.py`**
 
 Create `src/rlx/__init__.py` (empty), then `src/rlx/config.py`:
 
@@ -196,7 +196,7 @@ def load_base_config(path: Path) -> dict:
         return yaml.safe_load(f).get("defaults", {})
 ```
 
-- [ ] **Step 8: Install the package, then run the test and watch it pass**
+- [x] **Step 8: Install the package, then run the test and watch it pass**
 
 Now that `src/rlx/` exists, the editable install has something to find:
 
@@ -207,7 +207,7 @@ pytest tests/test_config.py -v
 
 Expected: 2 passed.
 
-- [ ] **Step 9: Write the failing test for the `Explorer` contract**
+- [x] **Step 9: Write the failing test for the `Explorer` contract**
 
 Create `tests/test_explorer_contract.py`:
 
@@ -241,7 +241,7 @@ def test_act_returns_an_int_action():
     assert e.act(np.array([0.1, 0.9, 0.3]), ("k",), 0) == 1
 ```
 
-- [ ] **Step 10: Run it and watch it fail**
+- [x] **Step 10: Run it and watch it fail**
 
 ```bash
 pytest tests/test_explorer_contract.py -v
@@ -249,7 +249,7 @@ pytest tests/test_explorer_contract.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.exploration'`.
 
-- [ ] **Step 11: Write `src/rlx/exploration/base.py`**
+- [x] **Step 11: Write `src/rlx/exploration/base.py`**
 
 ```python
 """The exploration strategy interface. FROZEN CONTRACT -- Max owns the
@@ -289,7 +289,7 @@ class Explorer(ABC):
         return {}
 ```
 
-- [ ] **Step 12: Write `src/rlx/exploration/__init__.py`**
+- [x] **Step 12: Write `src/rlx/exploration/__init__.py`**
 
 The factory lives here so `base.py` stays free of imports of its own
 implementations.
@@ -325,7 +325,7 @@ def make_explorer(name: str, cfg: RunConfig, rng: np.random.Generator) -> Explor
 The imports are inside the branches on purpose: Max's four modules do not exist
 yet, and this lets the contract be merged before they land.
 
-- [ ] **Step 13: Run the contract test and watch it pass**
+- [x] **Step 13: Run the contract test and watch it pass**
 
 ```bash
 pytest tests/test_explorer_contract.py -v
@@ -333,7 +333,7 @@ pytest tests/test_explorer_contract.py -v
 
 Expected: 3 passed.
 
-- [ ] **Step 14: Write the environment naming contract**
+- [x] **Step 14: Write the environment naming contract**
 
 `ENV_IDS` and `difficulty_index` are pure string conventions with no MiniGrid
 dependency, and **Daniel's `aggregate.py` imports `difficulty_index`**. They ship
@@ -383,7 +383,7 @@ pytest tests/test_env_naming.py -v
 
 Expected: 3 passed.
 
-- [ ] **Step 15: Write `configs/main.yaml`**
+- [x] **Step 15: Write `configs/main.yaml`**
 
 The full experiment matrix. `sweep.py` (Task 6) reads this.
 
@@ -418,14 +418,14 @@ strategies:
 seeds: [0, 1, 2, 3, 4]
 ```
 
-- [ ] **Step 16: Create the empty directories the other two need**
+- [x] **Step 16: Create the empty directories the other two need**
 
 ```bash
 mkdir -p src/rlx/analysis report/figures
 touch src/rlx/analysis/__init__.py
 ```
 
-- [ ] **Step 17: Run the whole suite**
+- [x] **Step 17: Run the whole suite**
 
 ```bash
 pytest -v
@@ -434,7 +434,7 @@ pytest -v
 Expected: 8 passed. Read the output. If anything failed, fix it and re-run before
 continuing.
 
-- [ ] **Step 18: Log the change**
+- [x] **Step 18: Log the change**
 
 Append to `docs/decision_log.md`, in plain language for the team:
 

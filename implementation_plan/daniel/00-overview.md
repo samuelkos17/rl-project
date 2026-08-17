@@ -19,6 +19,9 @@ experiment.
 
 ---
 
+**Where everyone is: [`../STATUS.md`](../STATUS.md).** Check it before you start
+a task, update it when you finish one.
+
 ## Before your first task: set up your environment
 
 The conda environment is not in git. Cloning the repo gives you the code but no

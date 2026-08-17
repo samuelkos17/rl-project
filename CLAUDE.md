@@ -155,10 +155,10 @@ git, so cloning the repo gives you the code but nothing to run it with. Verify
 with `pytest -q`. A `ModuleNotFoundError: No module named 'rlx'` means
 `pip install -e .` was skipped; it is not a broken commit.
 
-`pip install torch` on Windows yields a **CPU-only** build (`torch==X.Y.Z+cpu`,
-`torch.cuda.is_available() == False`). That is fine for workstreams B and C. See
-`docs/decision_log.md`, entry "pip installed a CPU-only torch", before running
-the task-2 benchmark.
+`pip install torch` on Windows yields a **CPU-only** build, and that is what we
+want. Benchmarked 2026-08-17: CPU 630 steps/s vs CUDA 550 on an RTX 3060 Ti — the
+network is far too small for a GPU to pay off at batch size 1. `device: cpu` is
+fixed in `configs/main.yaml`. **Do not install a CUDA build.**
 
 ---
 
@@ -434,6 +434,7 @@ that changes anything — see Rule 7.**
 |---|---|
 | What are we building and why? | `docs/specs/2026-08-17-exploration-comparison-design.md` |
 | What am I supposed to do next? | `implementation_plan/<name>/` |
+| Who is on what right now? | `implementation_plan/STATUS.md` |
 | What does this RL term mean? | `docs/glossary.md` |
 | Why was it built this way? | `docs/decision_log.md` |
 | What did we try that failed? | `docs/decision_log.md` (discarded entries) |

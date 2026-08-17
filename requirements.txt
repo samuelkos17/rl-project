@@ -1,9 +1,9 @@
-# NOTE: plain `pip install torch` gives a CPU-ONLY wheel on Windows (torch+cpu).
-# That is fine for workstreams B and C, and may well be fine for the sweep too --
-# but task 2's CPU-vs-GPU benchmark cannot measure the GPU with this wheel, it can
-# only report "cuda unavailable". To benchmark the GPU, reinstall with:
-#   pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu124
-# See docs/decision_log.md.
+# NOTE: plain `pip install torch` gives a CPU-ONLY wheel on Windows (torch+cpu),
+# and that is exactly what we want. We benchmarked both on 2026-08-17: the CPU
+# does 630 steps/s against the GPU's 550 on an RTX 3060 Ti, because our network is
+# far too small for a GPU to pay off. `device: cpu` is set in configs/main.yaml.
+# Do NOT install a CUDA build -- it is a 2.5 GB download that makes runs slower.
+# See docs/decision_log.md, "Benchmark result: the processor beats the graphics card".
 torch>=2.0
 gymnasium>=0.29
 minigrid>=2.3

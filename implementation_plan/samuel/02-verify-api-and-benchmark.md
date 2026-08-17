@@ -21,7 +21,7 @@ on the answers.
 
 ---
 
-- [ ] **Step 1: Write the API verification script**
+- [x] **Step 1: Write the API verification script**
 
 Create `scripts/verify_api.py`. This asserts every assumption in spec §3.
 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
     print("\nAll API assumptions verified.")
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 ```bash
 python scripts/verify_api.py
@@ -119,7 +119,7 @@ to be. Do not guess a second time; look it up.
 **Record the printed `max_steps` for each instance** — Task 3 needs it and
 Daniel's coverage denominator sanity check uses it.
 
-- [ ] **Step 3: Check `layout_varies_by_seed`**
+- [x] **Step 3: Check `layout_varies_by_seed`**
 
 Every `DoorKey-*` and `MultiRoom-*` row should print `True`. `Empty-*` may print
 `False`, which is fine — Empty has a fixed layout by construction.
@@ -128,7 +128,7 @@ If a `DoorKey` or `MultiRoom` row prints `False`, the layout is not seed-depende
 after all and the per-run layout pinning in the spec needs revisiting. Report it
 before continuing.
 
-- [ ] **Step 4: Write the device benchmark**
+- [x] **Step 4: Write the device benchmark**
 
 Create `scripts/benchmark_device.py`. It measures the real loop — environment
 step plus gradient update — not just matrix multiplication.
@@ -202,7 +202,7 @@ if __name__ == "__main__":
         print("cuda  unavailable")
 ```
 
-- [ ] **Step 5: Run the benchmark**
+- [x] **Step 5: Run the benchmark**
 
 ```bash
 python scripts/benchmark_device.py
@@ -211,7 +211,7 @@ python scripts/benchmark_device.py
 Read the actual numbers. Do not assume the answer — the whole point of this step
 is that we do not know it.
 
-- [ ] **Step 6: Decide `total_steps` and `device` from the measurement**
+- [x] **Step 6: Decide `total_steps` and `device` from the measurement**
 
 Budget arithmetic. You have 260 runs, 3 machines, and roughly 8 parallel workers
 per machine, so about 24 concurrent runs. Wall clock is therefore:
@@ -227,7 +227,7 @@ Pick the largest `total_steps` that keeps the full sweep under **6 hours** of
 wall clock. Round to a clean number (400k, 300k, or 200k). Do not exceed 400k
 even if it fits; more steps is not the goal.
 
-- [ ] **Step 7: Update `configs/main.yaml`, and re-check `snapshot_every` with it**
+- [x] **Step 7: Update `configs/main.yaml`, and re-check `snapshot_every` with it**
 
 Set `total_steps` and `device` to the measured values. Delete the two
 `# provisional` comments.
@@ -258,7 +258,7 @@ tell Daniel — his synthetic generator hard-codes `SNAPSHOT_EVERY` and must mat
 Storage is about 1 KB per snapshot, so extra resolution is effectively free; a
 4-point trapezoid on the main predictor is not.
 
-- [ ] **Step 8: Log both results**
+- [x] **Step 8: Log both results**
 
 Append to `docs/decision_log.md`, replacing the open "CPU vs GPU" entry's status
 with `Resolved`. Write plainly, with the real numbers:

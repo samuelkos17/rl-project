@@ -33,7 +33,10 @@ sweep would skip it forever and we would silently lose a data point. So we write
 to `seed3.partial/` and rename to `seed3/` only on success. **A directory that
 exists is a run that finished.**
 
-Sizes are tiny: `16 x 16 x 4 = 1024` integers per snapshot, ~40 snapshots per run.
+Sizes are small. The array is sized from the real grid, and **MultiRoom is 25x25
+for every N** (verified in Samuel's task 2), so the biggest case is
+`25 x 25 x 4 = 2500` integers per snapshot, ~40 snapshots per run — roughly
+400 KB per run before compression, much less after. Do not hard-code 16.
 
 ---
 

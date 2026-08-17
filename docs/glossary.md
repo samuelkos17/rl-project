@@ -188,7 +188,8 @@ which cells are reachable, and computing how far every cell is from the goal.
 
 **Visitation array** — how we record coverage. A grid of counters, one per
 `(x, y, direction)`, that goes up by one each time the agent is there. We save a
-snapshot every 10,000 steps. It is tiny (about 1000 numbers per snapshot).
+snapshot every 10,000 steps. It is small — between about 400 and 2,500 numbers
+per snapshot depending on how big the maze is.
 
 **Early-coverage AUC** — "AUC" is *area under the curve*. We plot coverage over
 the first 20% of training and measure the area under that plot. A strategy that

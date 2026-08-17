@@ -190,7 +190,7 @@ should name it rather than let someone else spot it.
 
 ## 2026-08-17 — CPU vs GPU is an open question, to be measured
 
-**Status:** Open — resolved by the day-1 benchmark
+**Status:** RESOLVED 2026-08-17 — the benchmark ran; see "Benchmark result: the processor beats the graphics card" below. CPU won.
 
 **What changed:** Nothing yet. Recording that we do not know the answer.
 
@@ -238,7 +238,7 @@ the next entry.
 
 ## 2026-08-17 — pip installed a CPU-only torch, which task 2 must know about
 
-**Status:** Open — decide during task 2
+**Status:** RESOLVED 2026-08-17 — see "Benchmark result: the processor beats the graphics card"
 
 **What changed:** Nothing yet. Recording a trap we walked into and spotted.
 
@@ -264,3 +264,92 @@ CPU-vs-GPU comparison is not. There is a note about this at the top of
 
 **What it means for the results:** Only how long we wait for the sweep. It does
 not change any number in the report.
+
+---
+
+## 2026-08-17 — Benchmark result: the processor beats the graphics card, budget stays 400k
+
+**Status:** Active — resolves the open entry "pip installed a CPU-only torch"
+
+**What changed:** We installed the proper graphics-card version of torch
+(`2.13.0+cu130`, matching the CUDA 13.3 driver) and measured both properly
+instead of guessing. Then we chose the processor anyway.
+
+**The numbers**, same 3,000-step loop on both:
+
+| device | speed | time for one 400k-step run |
+|---|---|---|
+| processor (CPU) | 630 steps/s | 10.6 min |
+| graphics card (GPU) | 550 steps/s | 12.1 min |
+
+The graphics card is about 13% **slower**.
+
+**Why, and this is worth understanding:** we first assumed the graphics card
+would not help because stepping the maze is plain Python that a graphics card
+cannot touch. We measured that too, and **we were wrong about the reason** —
+stepping the maze is only 20% of the time; the neural network is the other 80%.
+
+The graphics card still loses, for a different reason. Our network is tiny and we
+ask it for one single decision at a time. Sending one tiny job to a graphics card
+costs more in overhead than just doing the arithmetic on the processor. Graphics
+cards win on big batches, and DQN's "look at one situation, pick one action"
+pattern is the opposite of that.
+
+So: right conclusion, wrong reason, and we only know that because we measured.
+
+**Parallel speed, which is what actually decides our schedule:**
+
+| workers | each | total | efficiency |
+|---|---|---|---|
+| 1 | 760 steps/s | 760 | 100% |
+| 4 | 660 | 2,641 | 87% |
+| 8 | 503 | 4,022 | 66% |
+| 10 | 364 | 3,635 | 48% |
+| 12 | 377 | 4,527 | 50% |
+
+Total speed stops improving after about 8 workers (10 is actually worse than 8).
+**Use `--workers 8`.**
+
+**What this means for the schedule:** the full 260 runs is 104 million steps.
+One machine at 8 workers: about 7.2 hours. Our three machines: **about 2.4
+hours.** That fits comfortably, so we keep the full 400,000-step budget rather
+than cutting it.
+
+**Settings now fixed in `configs/main.yaml`:** `total_steps: 400000`,
+`device: cpu`. Not provisional any more — measured.
+
+---
+
+## 2026-08-17 — All 13 mazes verified against the real MiniGrid, plus two surprises
+
+**Status:** Active
+
+**What changed:** Ran `scripts/verify_api.py`, which builds all 13 mazes and
+checks every assumption the plan made about how MiniGrid works. **All 13 passed**
+on minigrid 3.1.0 — newer than the 2.x the plan was written against.
+
+Confirmed working: the 7x7x3 view, 7 actions, reading the agent's true position
+and facing, and — most importantly — that asking for the same seed twice rebuilds
+exactly the same maze. That last one is what our whole coverage measurement rests
+on.
+
+Also confirmed: `Empty` mazes are the same regardless of seed (expected, they
+have no random parts), while `DoorKey` and `MultiRoom` do change with the seed.
+That is what gives us 5 different mazes across our 5 seeds.
+
+**Surprise 1: MultiRoom mazes are 25x25 no matter how many rooms.** The plan
+assumed they grew with room count and that grids were at most 16x16. They are not.
+This makes our visit-count arrays bigger than written down (2,500 numbers instead
+of 1,024), which is still small, but we corrected the spec and Daniel's task so
+nobody hard-codes 16.
+
+**Surprise 2, and this one could have quietly ruined the project:** MultiRoom
+gives the agent very little time — only 20 steps per room, so 120 steps for the
+6-room maze, against 640 for DoorKey-8. We checked whether the goal is even
+*reachable* in that time, because if it is not, those mazes would score zero for a
+reason that has nothing to do with exploration, and our whole difficulty curve
+would be measuring the wrong thing.
+
+It is fine. Worst case we found needs roughly 37-53 steps against a 120 limit.
+So when the hard mazes score zero — and they probably will — that will genuinely
+be because exploring is hard, which is exactly what we are trying to measure.
