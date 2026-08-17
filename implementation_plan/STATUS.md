@@ -3,7 +3,9 @@
 **Update this whenever you finish a task, before you open the PR.** It is the one
 place the other two look to answer "can I start yet?".
 
+
 Last updated: **2026-08-18**, by Samuel.
+
 
 ---
 
@@ -13,7 +15,8 @@ Last updated: **2026-08-18**, by Samuel.
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation ✅ 3 coverage metrics |
+
 
 ## What is available on `main` right now
 
@@ -54,6 +57,35 @@ Settled by Daniel's task 2:
 - **`difficulty` is comparable only within a family** — grid size for
   Empty/DoorKey, room count for MultiRoom. Never sort or correlate across
   families on it; group by `family` first.
+
+Settled by Daniel's task 3 (`analysis/coverage.py`, tests pass, **`envs.py` not
+part of it**):
+- `coverage.py` was written and tested against a **local, uncommitted copy** of
+  Samuel's task 3 (`GridInfo`, `bfs_distances`, `reachable_mask`, `grid_info`),
+  pasted verbatim from `samuel/03-env-factory.md`. `tests/test_coverage.py`
+  touches only the frozen contract, so it must pass unchanged against Samuel's
+  real implementation. When Samuel 3 merges: `git checkout main -- src/rlx/envs.py`,
+  then re-run `pytest tests/test_coverage.py`.
+- **A door only counts as a route waypoint when the maze also has a key.** The
+  planned `_landmark_chain` appended any non-`None` door, which is right for
+  DoorKey and wrong for MultiRoom — MultiRoom's rooms are joined by doors,
+  `grid_info` keeps only the *last* of the N−1 it finds, and routing through
+  that arbitrary door dragged an unrelated room into the task-relevant mask.
+  `test_a_multiroom_connecting_door_is_not_a_waypoint` fails if this is reverted.
+- **On the Empty family raw and task-relevant coverage are identical (ratio 1.00),
+  by construction, for every seed** — start and goal are opposite corners of an
+  open grid, so every interior cell is on some shortest path. Not fixable in
+  code. Task 4 and 5 must not present the two as independent predictors on Empty.
+  The distinction only does real work on DoorKey-7/8/10 (ratios 0.81 / 0.65 / 0.47).
+- Full denominator table (reachable / on-route / +neighbours per instance) is in
+  `docs/decision_log.md`, entry "Two ways of measuring coverage".
+
+**For Samuel — from Daniel's task 3.** `CLAUDE.md` §7 says "the 5 seeds give 5
+layouts per instance". That is **false for the Empty family**: `grid_info("Empty-N", s)`
+returns start `(1,1)` and goal `(N-2,N-2)` for every `s` in 0..4 — verified on
+Empty-5/8/16. The seeds still vary agent and network randomness, so the runs are
+not duplicates, but the *maze* does not change. DoorKey and MultiRoom do vary.
+Worth a correction in `CLAUDE.md` §7 and the spec, since it is your section.
 
 **For Samuel — one question from Daniel's task 2 review.** `final_return` is
 defined in spec §7.1 as the mean of the **last 5 evaluation points**, but
@@ -153,6 +185,7 @@ Settled by Samuel's task 2, no longer provisional:
 | Daniel 3 (coverage) | `grid_info`, `reachable_mask`, `bfs_distances` | Samuel 3 | ✅ **unblocked** |
 | Max 4 (NoisyNets) | `QNetwork`, `NoisyLinear` placeholder | Samuel 4 | ✅ **unblocked** |
 | Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ✅ **done** |
+
 
 **Nothing is blocked any more.** Every task in the plan can now proceed.
 
