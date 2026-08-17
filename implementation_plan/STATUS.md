@@ -12,7 +12,7 @@ Last updated: **2026-08-18**, by Max.
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark | — | 3 env factory |
-| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy | — | 2 boltzmann |
+| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann | — | 3 count-based |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
 ## What is available on `main` right now
@@ -27,6 +27,7 @@ Everything below is merged and safe to import.
 | `ENV_IDS`, `difficulty_index` | `rlx.envs` | Daniel |
 | `RunLogger` | `rlx.logging` | Samuel |
 | `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
+| `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
 | `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
 | `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |

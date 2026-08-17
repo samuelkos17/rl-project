@@ -687,3 +687,75 @@ version of torch again — the same trap Daniel logged on 2026-08-17, now hit by
 second person, because `requirements.txt` does not say which version to fetch.
 It costs 3.4 GB of disk and changes no result, since `device: cpu` is fixed. A
 one-line pin in `requirements.txt` would stop the third person hitting it.
+
+---
+
+## 2026-08-18 — Boltzmann exploration implemented
+
+**Status:** Active
+
+**What changed:** Added the second strategy. Instead of "best action, or a
+completely random one", it picks each action with a probability based on how good
+the agent thinks it is. A second-best action gets chosen fairly often; an action
+the agent rates as useless almost never does.
+
+The "temperature" controls how picky it is: high temperature means nearly random,
+low temperature means nearly always the best action. We start at 1.0 and shrink it
+to 0.05 over the first 40% of training. Our professor specifically asked us to
+write this schedule down, so it is in the spec too.
+
+**One implementation detail worth recording:** the maths involves raising e to the
+power of (Q divided by temperature). At low temperatures that number gets
+astronomically large and the computer gives up and returns "infinity", which
+poisons everything downstream. The standard fix is subtracting the largest Q-value
+first, which changes nothing mathematically but keeps the numbers small. We have a
+test for it, and we checked that the test genuinely catches the problem: without
+the fix the probabilities come out as `[nan nan 0. 0. nan nan nan]`.
+
+### A trap that is nobody's bug: temperature only means something relative to the Q-values
+
+Epsilon-greedy does not care how large the Q-values are. If you multiply every
+Q-value by ten, it behaves identically. **Boltzmann is not like that.** What
+matters to it is the size of the *differences* between Q-values compared to the
+temperature.
+
+That matters here because MiniGrid's scores are small. We checked the installed
+source: a successful episode scores `1 - 0.9 * (steps taken / step limit)`, so
+between 0.1 and 1.0, and a failed one scores 0. So the gap between the best and
+worst action can never exceed about 0.9, and early in training — when the network
+is barely trained and almost nothing has been rewarded yet — it is far smaller
+than that.
+
+The practical effect, measured on the real 400,000-step budget:
+
+| step | temperature |
+|---|---|
+| 0 | 1.00 |
+| 20,000 | 0.69 |
+| 40,000 | 0.47 |
+| 80,000 | 0.22 |
+| 160,000 and after | 0.05 |
+
+At temperature 1.0, even with the largest gap the environment can produce, the
+best action only gets picked about 26% of the time against 14% for a coin-flip
+across all seven. In other words, early Boltzmann is close to picking at random.
+It only starts genuinely favouring good actions once the temperature drops below
+about 0.2, which happens at step 85,959 — **just after the 80,000-step window
+closes that we measure early exploration over.**
+
+**What this means for the results:** if Boltzmann turns out to have high early
+coverage, we cannot immediately claim that its cleverness caused it — during most
+of the window we measure, it is behaving a lot like uniform random. The report has
+to say this. It is exactly the sort of thing our professor would ask about.
+
+**We changed nothing.** The schedule is the one in the spec, and tuning a strategy
+to make it look good is forbidden. This is written down as something to interpret,
+not something to fix.
+
+**Honestly uncertain:** how far apart the Q-values actually drift during training
+is not something we can know before running the experiments. The numbers above use
+the widest gap the environment allows, which is the most generous case for
+Boltzmann. If the real gaps are smaller, it stays close to random for longer, not
+less. Worth re-checking once we have real runs.
+
+**Measured after the change:** 47 tests pass (38 before, 9 new).

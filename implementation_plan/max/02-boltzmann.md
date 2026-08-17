@@ -43,7 +43,7 @@ normalisation) and it is the difference between working and silently producing
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_exploration/test_boltzmann.py`:
 
@@ -119,7 +119,7 @@ def test_adds_no_intrinsic_bonus(cfg, rng, key):
     assert Boltzmann(cfg, rng).intrinsic_bonus(key) == 0.0
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_exploration/test_boltzmann.py -v
@@ -127,7 +127,7 @@ pytest tests/test_exploration/test_boltzmann.py -v
 
 Expected: `ModuleNotFoundError`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `src/rlx/exploration/boltzmann.py`:
 
@@ -169,7 +169,7 @@ class Boltzmann(Explorer):
         return {"temperature": self._tau}
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 ```bash
 pytest tests/test_exploration/test_boltzmann.py -v
@@ -181,7 +181,7 @@ If `test_no_overflow_at_tiny_temperature` fails with `nan` or
 `probabilities do not sum to 1`, the max-subtraction is missing or is being done
 after the exponential instead of before.
 
-- [ ] **Step 5: Look at the actual distribution once**
+- [x] **Step 5: Look at the actual distribution once**
 
 A sanity check you should read with your own eyes, not just assert on:
 
