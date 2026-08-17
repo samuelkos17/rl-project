@@ -40,7 +40,7 @@ for every N** (verified in Samuel's task 2), so the biggest case is
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_logging.py`:
 
@@ -156,7 +156,7 @@ def test_no_partial_directory_survives_finalize(cfg):
     assert not list(cfg.run_dir.parent.glob("*.partial"))
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_logging.py -v
@@ -164,7 +164,7 @@ pytest tests/test_logging.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.logging'`.
 
-- [ ] **Step 3: Write `src/rlx/logging.py`**
+- [x] **Step 3: Write `src/rlx/logging.py`**
 
 ```python
 """Visitation logging and the result-directory writer.
@@ -239,7 +239,7 @@ class RunLogger:
 `pd.DataFrame(self._rows)` handles the varying-keys case for free: missing keys
 become `NaN` columns, which is exactly what the test expects.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 ```bash
 pytest tests/test_logging.py -v
@@ -261,7 +261,7 @@ git commit -m "feat: visitation logger and atomic result writer"
 Open the PR, merge it, and **tell Samuel it is on main** — his training loop
 imports `RunLogger` and he is stubbing it until yours lands.
 
-- [ ] **Step 6: Log the change**
+- [x] **Step 6: Log the change**
 
 Append to `docs/decision_log.md`:
 
