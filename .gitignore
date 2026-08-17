@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Results are generated, not source. Committed once at the end in a single
+# dedicated commit -- see CLAUDE.md section 10.
+results/
+results_pilot/
+results_synthetic/
+*.partial/
+
+# Local scratch output (Windows has no /tmp)
+scratch/
+
+# Generated figures
+report/figures/
+
+# OS / editor
+.DS_Store
+Thumbs.db
