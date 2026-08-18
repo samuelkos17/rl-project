@@ -992,3 +992,60 @@ be invisible rather than loud:
 
 **What it means for the results:** Nothing yet. This is machinery. The training
 loop that uses it is next.
+
+---
+
+## 2026-08-18 — The agent and the training loop, and it actually learns
+
+**Status:** Active
+
+**What changed:** Built the Double DQN agent and the training loop that ties
+everything together — maze, network, memory, exploration strategy, and Daniel's
+logging. 139 tests pass, 1 expected-to-fail (see below).
+
+**It works.** A 20,000-step run on Empty-5 went from a score of 0 to **0.955**,
+which is close to the best possible. Full pipeline, end to end, for the first
+time.
+
+**We checked the two halves fit together.** Daniel's results loader read the
+folder written by our training loop without a single adjustment: it found the
+run, parsed the maze name, strategy and seed from the folder path, and produced
+the tidy table his analysis expects. That was the biggest integration risk in the
+whole project and it is now behind us.
+
+**One number that looks wrong but is not.** The loader reported a final score of
+0.239 for a run whose last measurement was 0.955. That is because "final score"
+averages the **last five** measurements, and this short test run only had four —
+three zeros and one 0.955. In a real 400,000-step run there are 80 measurements,
+so the last five all come from after the agent has learned. Nothing to fix, but
+worth knowing before someone panics at a low number in a short test.
+
+**One test is deliberately marked as expected-to-fail:** the training loop cannot
+run the NoisyNets strategy until Max merges his task 4. Rather than write a
+reminder to delete the marker later — which someone would forget — the test
+**checks whether his module exists** and quietly becomes a real test the moment
+it lands. No cleanup step, nothing to remember.
+
+**Speed, measured on the real loop rather than the benchmark:** about 500-560
+steps per second, against 630 in the artificial benchmark from the 17th. The
+difference is the visit logging and the exploration strategy, which the benchmark
+did not include. Re-projecting the full 260-run sweep: roughly **3 hours across
+our three machines** instead of 2.4. Still comfortable, no change needed.
+
+**Three rules are enforced in code and marked `CRITICAL` in the file**, because
+breaking any one of them would invalidate results without breaking anything
+visibly:
+
+1. The maze is pinned to the run's seed, so one run sees one maze.
+2. The novelty bonus is added to the replay memory and nowhere else — scoring
+   uses the maze's real reward only, with the bonus and any network noise
+   switched off. A test checks scores never exceed MiniGrid's ceiling of 1.0,
+   which is what would happen if the bonus leaked in.
+3. What gets counted for the novelty bonus is the agent's own view, never its
+   true position.
+
+**One small change from the plan:** the Double DQN target calculation was pulled
+out into its own function so it can be tested directly. There is now a test that
+fails if anyone ever rewrites it as plain DQN — that single line is the whole
+reason we chose Double DQN, and it would otherwise be very easy to "simplify"
+back by accident.

@@ -27,7 +27,7 @@ those six methods doing nothing, and delete it when his lands. Do not block.
 
 ---
 
-- [ ] **Step 1: Write the failing agent test**
+- [x] **Step 1: Write the failing agent test**
 
 Create `tests/test_agent.py`:
 
@@ -83,7 +83,7 @@ def test_target_and_online_start_identical():
                        agent.target.head[0].weight.detach())
 ```
 
-- [ ] **Step 2: Run and watch it fail**
+- [x] **Step 2: Run and watch it fail**
 
 ```bash
 pytest tests/test_agent.py -v
@@ -91,7 +91,7 @@ pytest tests/test_agent.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.agent'`.
 
-- [ ] **Step 3: Write `src/rlx/agent.py`**
+- [x] **Step 3: Write `src/rlx/agent.py`**
 
 The one line that makes this Double DQN rather than vanilla DQN is marked. Read
 the comment there — it is the thing the report has to justify.
@@ -156,7 +156,7 @@ class DoubleDQNAgent:
         self.target.load_state_dict(self.online.state_dict())
 ```
 
-- [ ] **Step 4: Run the agent tests**
+- [x] **Step 4: Run the agent tests**
 
 ```bash
 pytest tests/test_agent.py -v
@@ -164,7 +164,7 @@ pytest tests/test_agent.py -v
 
 Expected: 4 passed.
 
-- [ ] **Step 5: Write the failing training-loop test**
+- [x] **Step 5: Write the failing training-loop test**
 
 Create `tests/test_train.py`. These are slow-ish (a few seconds); that is fine.
 
@@ -222,7 +222,7 @@ def test_every_strategy_runs_end_to_end(tmp_path):
         assert (run_dir / "metrics.csv").exists()
 ```
 
-- [ ] **Step 6: Run and watch it fail**
+- [x] **Step 6: Run and watch it fail**
 
 ```bash
 pytest tests/test_train.py -v
@@ -230,7 +230,7 @@ pytest tests/test_train.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.train'`.
 
-- [ ] **Step 7: Write `src/rlx/train.py`**
+- [x] **Step 7: Write `src/rlx/train.py`**
 
 Three things in here are easy to get wrong and each one would quietly invalidate
 the experiment. They are marked `CRITICAL` in the code.
@@ -406,7 +406,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 8: Run the training tests**
+- [x] **Step 8: Run the training tests**
 
 ```bash
 pytest tests/test_train.py -v
@@ -419,7 +419,7 @@ they are not merged yet, mark that one test `@pytest.mark.xfail(reason="needs
 workstream B")` and remove the marker on integration day. **Do not delete the
 test.**
 
-- [ ] **Step 9: Run one real short run by hand**
+- [x] **Step 9: Run one real short run by hand**
 
 ```bash
 python -m rlx.train --env-id Empty-5 --strategy epsilon_greedy --seed 0 --total-steps 20000
@@ -442,7 +442,7 @@ debug it now, on the easiest environment, not on integration day.
 Two likely causes: the observation is not being permuted to `(3,7,7)` before the
 conv layers, or the target network is never being synced.
 
-- [ ] **Step 10: Run the whole suite**
+- [x] **Step 10: Run the whole suite**
 
 ```bash
 pytest -v
