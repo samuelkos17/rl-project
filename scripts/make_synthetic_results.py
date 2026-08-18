@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from rlx.config import RunConfig
-from rlx.envs import difficulty_index
+from rlx.envs import grid_info, reachable_mask
 
 #: A 6-instance subset of the real 13. Not rlx.envs.ENV_IDS -- the fixture only
 #: needs enough instances to cover all three families at two difficulties each.
@@ -38,16 +38,6 @@ def _difficulty(env_id: str) -> float:
     return {"Empty": 0.2, "DoorKey": 0.6, "MultiRoom": 1.0}[env_id.split("-")[0]]
 
 
-def _grid_size(env_id: str) -> int:
-    """Real MiniGrid dimensions: grid size for Empty/DoorKey, 25x25 for every
-    MultiRoom N (verified 2026-08-17).
-
-    Task 3 intersects `counts` with a (W, H) reachability mask from grid_info, so
-    a fixture with the wrong shape could not be developed against at all.
-    """
-    return 25 if env_id.startswith("MultiRoom") else difficulty_index(env_id)
-
-
 def _early_auc(rate: float, difficulty: float) -> float:
     """Mean coverage over the first fifth of training -- the early-AUC window."""
     steps = np.arange(0, TOTAL_STEPS, EVAL_EVERY)
@@ -67,9 +57,17 @@ def _stable_seed(env_id: str, strategy: str, seed: int) -> int:
 
 def make_run(out_root: Path, env_id: str, strategy: str, seed: int, effect: bool = True) -> None:
     rng = np.random.default_rng(_stable_seed(env_id, strategy, seed))
-    w = h = _grid_size(env_id)
     difficulty = _difficulty(env_id)
     rate = EXPLORE_RATE[strategy] * rng.normal(1.0, 0.12)
+
+    # A real agent can only ever stand in a REACHABLE cell, so those are the only
+    # states this fixture ever marks as visited -- both in `counts` below and in
+    # the `distinct_states` column. Same layout_seed=seed convention as a real
+    # run, so this is the same maze coverage.py grades the run against.
+    info = grid_info(env_id, seed)
+    w, h = info.width, info.height
+    reachable_idx = np.flatnonzero(
+        np.repeat(reachable_mask(info)[:, :, None], 4, axis=2).ravel())
 
     eval_steps = np.arange(0, TOTAL_STEPS, EVAL_EVERY)
     coverage = 1.0 - np.exp(-rate * eval_steps / (60_000 * (1 + 2 * difficulty)))
@@ -90,7 +88,9 @@ def make_run(out_root: Path, env_id: str, strategy: str, seed: int, effect: bool
         "eval_return_std": np.zeros_like(returns),
         "train_return_mean": returns * 0.8,
         "episodes": (eval_steps / 200).astype(int),
-        "distinct_states": (coverage * w * h * 4).astype(int),
+        # Denominator is reachable states, not w*h*4: RunLogger.distinct_states()
+        # returns (counts > 0).sum(), and counts only ever fill reachable cells.
+        "distinct_states": (coverage * len(reachable_idx)).astype(int),
         "loss": rng.random(len(eval_steps)) * 0.1,
         "epsilon": np.linspace(1.0, 0.05, len(eval_steps)),
     })
@@ -99,9 +99,14 @@ def make_run(out_root: Path, env_id: str, strategy: str, seed: int, effect: bool
     # the cells seen so far, so the array is monotone non-decreasing over T. The
     # earlier version redrew each snapshot from scratch, which let 37% of cells
     # DECREASE between snapshots -- impossible in a real run.
+    #
+    # A second earlier version permuted the whole w*h*4 grid, walls included,
+    # which let raw_coverage() -- whose denominator is reachable states only --
+    # read far above 1.0 (up to 57x on MultiRoom, where as little as 1.8% of the
+    # 25x25 grid is reachable).
     snap_steps = np.arange(SNAPSHOT_EVERY, TOTAL_STEPS + 1, SNAPSHOT_EVERY)
     counts = np.zeros((len(snap_steps), w, h, 4), dtype=np.int32)
-    order = rng.permutation(w * h * 4)
+    order = rng.permutation(reachable_idx)
     flat = np.zeros(w * h * 4, dtype=np.int32)
     for i, step in enumerate(snap_steps):
         frac = 1.0 - np.exp(-rate * step / (60_000 * (1 + 2 * difficulty)))

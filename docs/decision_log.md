@@ -1303,3 +1303,82 @@ actually are.
 the same discipline: settle it on the scale argument now, before the sweep, and
 do not touch it afterwards. If we run the sweep as-is, "Boltzmann came last" would
 be a statement about our schedule, not about Boltzmann.
+
+---
+
+## 2026-08-18 — The fake data had agents walking through walls
+
+**Status:** Fixed
+
+**What changed:** `scripts/make_synthetic_results.py` now only places synthetic
+visits on cells the agent could actually reach, using the same `grid_info` /
+`reachable_mask` functions `analysis/coverage.py` uses to grade real runs.
+
+**The bug:** the script picked which `(x, y, direction)` combinations to mark as
+"visited" by shuffling *every* cell in the grid, walls included. A real agent can
+never stand inside a wall or a corner MultiRoom's rooms never reach, so this
+handed `raw_coverage()` a numerator that could be much bigger than its
+denominator, which only counts reachable cells. The size of the error is exactly
+the ratio of "all cells" to "reachable cells", measured per instance and seed:
+
+| family | inflation of raw coverage |
+|---|---|
+| Empty-5 / Empty-8 | 2.8x / 1.8x |
+| DoorKey-5 / DoorKey-8 | 3.6x / 2.1x |
+| MultiRoom-N4 | 12.8x – 17.9x |
+| MultiRoom-N2 | 18.9x – **56.8x** |
+
+MultiRoom is worst because its rooms sit in a corner of a fixed 25x25 canvas, so
+as little as 1.8% of the grid is reachable. The highest raw coverage actually
+observed before the fix was **54.4** — a number that cannot exceed 1.0 by
+definition.
+
+This could not happen on real data — an agent cannot walk through a wall — so it
+was invisible until someone actually ran `raw_coverage()` against the fixture.
+Task 4 (`analysis/stats.py`) is exactly that someone: its step 5 runs the whole
+correlation pipeline on this fixture, and it would have been correlating
+nonsense coverage numbers against return without any error being raised.
+
+**The fix:** build the list of fillable states once per `(env_id, seed)` from
+`reachable_mask(grid_info(env_id, seed))` — the same `layout_seed = seed`
+convention a real run uses — and shuffle only that list. Unreachable cells now
+stay at zero forever, exactly like in a real run.
+
+**A second thing the fix broke, and we then fixed too.** `metrics.csv` has a
+`distinct_states` column — how many distinct positions the agent has stood in so
+far. The fixture computed it against the whole grid, which stopped matching once
+the counts only filled reachable cells: one MultiRoom run claimed 2,225 distinct
+states in `metrics.csv` while its own `visitation.npz` held 67. Both now use the
+reachable count, so a fixture run says the same thing about itself in both files
+(they still differ by up to 2%, because the two are sampled on different step
+grids — evaluations every 5,000 steps, snapshots every 10,000).
+
+**Measured after the fix**, both fixtures, all 120 runs each:
+
+| check | result |
+|---|---|
+| max raw coverage | 0.993 (was up to 54.4) |
+| max task-relevant coverage | 0.993 |
+| runs outside `[0, 1]` | 0 |
+| visits in unreachable cells | 0 |
+| non-monotone count arrays | 0 |
+| `distinct_states` above the reachable maximum | 0 |
+| identical `counts` and `metrics.csv` across two separate generator runs | 120 / 120 |
+
+**The baked-in ground truth survives the fix**, which is the property Task 4
+depends on — within-instance Spearman between early coverage and final return:
+
+| dataset | range | shape |
+|---|---|---|
+| default | **+0.49 … +0.94** | rises with difficulty, all p < 0.03 |
+| `--no-effect` | **−0.22 … +0.19** | no instance significant (all p > 0.34) |
+
+Full test suite: 165 passed, 1 xfailed, unchanged — no test had pinned down the
+old, wrong numbers.
+
+**What it means for the results:** Nothing in `coverage.py` or its tests was
+wrong; the bug was entirely in the fixture generator. `results_synthetic/` and
+`results_synthetic_noeffect/` must be regenerated with the fixed script before
+Task 4's pipeline test runs against them — they are gitignored, so this is a
+local `python scripts/make_synthetic_results.py` step for whoever runs Task 4,
+not a data file to commit.

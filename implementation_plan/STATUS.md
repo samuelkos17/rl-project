@@ -4,7 +4,7 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-18**, by Samuel.
+Last updated: **2026-08-18**, by Daniel.
 
 
 ---
@@ -15,7 +15,7 @@ Last updated: **2026-08-18**, by Samuel.
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation ✅ 3 coverage metrics |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics | — | 4 statistics |
 
 
 ## What is available on `main` right now
@@ -48,8 +48,10 @@ Settled by Daniel's task 2:
 - Analysis can be developed with **no real experiments**: the synthetic fixture
   writes the frozen §5 format (`steps` int64, `counts` int32 `(T, W, H, 4)`).
 - The fixture ships **two** datasets: the default has the hypothesis baked in
-  (within-instance Spearman 0.58–0.93, rising with difficulty), `--no-effect`
-  has none (−0.22 to +0.15, no significance). Task 4 must pass **both**.
+  (within-instance Spearman **+0.49 to +0.94**, rising with difficulty, all
+  p < 0.03), `--no-effect` has none (**−0.22 to +0.19**, all p > 0.34). Task 4
+  must pass **both**. Re-measured 2026-08-18 after the reachability fix below;
+  the ranges before it were 0.58–0.93 and −0.22 to +0.15.
 - **Task 4 requirement:** an instance where every run scores the same has an
   undefined within-instance correlation. Report those as "no variance, excluded",
   never as a silent `NaN`. This is a plausible real outcome for `DoorKey-10` and
@@ -57,6 +59,17 @@ Settled by Daniel's task 2:
 - **`difficulty` is comparable only within a family** — grid size for
   Empty/DoorKey, room count for MultiRoom. Never sort or correlate across
   families on it; group by `family` first.
+- **2026-08-18 fix:** the fixture used to scatter visits across the *whole*
+  grid, walls included, which let `raw_coverage()` read above 1.0 (observed 54.4
+  on MultiRoom-N2, where only 1.8% of the 25x25 grid is reachable). The
+  `distinct_states` column had the same bug. Both now only count reachable
+  `(x, y, dir)` states, via the same
+  `grid_info` / `reachable_mask` real runs use. If you have a `results_synthetic*`
+  directory from before this date, **regenerate it**:
+  `python scripts/make_synthetic_results.py --out results_synthetic` (and
+  `--no-effect` for the control) — it is gitignored, so nothing was silently
+  fixed under you. Details in `docs/decision_log.md`, "The fake data had agents
+  walking through walls".
 
 Settled by Daniel's task 3 (`analysis/coverage.py`, tests pass, **`envs.py` not
 part of it**):
@@ -94,6 +107,29 @@ often than it evaluates, most rows carry an empty `eval_return_mean`.
 `rlx.analysis.aggregate.final_return` now drops the empty entries before taking
 the tail, so it is correct either way — but if you intend to log at a different
 cadence than you evaluate, say so, because it changes how `metrics.csv` looks.
+
+**For Samuel — a test of yours failed once and did not reproduce.**
+`tests/test_agent.py::test_double_dqn_target_differs_from_vanilla_max` failed on
+2026-08-18 at **line 82**, `assert not np.allclose(double, vanilla)` — the
+"the two networks must disagree" assertion, **not** the
+`double <= vanilla` invariant on the line below it, which held.
+
+Seen **once in ~6 full-suite runs**; 5 later full runs and the test in isolation
+were green, and a sweep over 40 different ambient `torch` RNG states did not
+reproduce it. **UNVERIFIED: the trigger is not understood.**
+
+Structural reason it *can* vary at all: the test builds `DoubleDQNAgent(...)`
+**before** it calls `torch.manual_seed(1)`, so the online network's weights come
+from whatever global torch RNG state earlier tests happened to leave behind. The
+target net is then `online + randn(seed 1) * 0.5`. If online's argmax coincides
+with target's argmax for all 64 sampled observations, `double == vanilla` and the
+assertion fires. Moving the `torch.manual_seed(1)` above the constructor would
+make the test independent of execution history.
+
+Not caused by Daniel's 2026-08-18 fixture fix: that change touches only
+`scripts/make_synthetic_results.py`, which no test imports (`tests/test_aggregate.py`
+runs it as a **subprocess**), and it edits neither `src/` nor `tests/`.
+It is your file, so nobody has changed it. **If it fails again, it is real.**
 
 **For Samuel and Daniel — one question from Max's task 3.** `count_beta = 0.05`
 is provisional and the task file told us to measure it before trusting it. Over
