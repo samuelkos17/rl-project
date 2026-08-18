@@ -1,0 +1,10 @@
+# Pilot sweep: cheap end-to-end check of the whole pipeline before the real run.
+# 2 envs x 4 strategies x 2 seeds = 16 runs at 20k steps.
+defaults:
+  total_steps: 20000
+  device: cpu
+  results_root: results_pilot
+
+env_ids: [Empty-5, DoorKey-5]
+strategies: [epsilon_greedy, boltzmann, count_based, noisy]
+seeds: [0, 1]

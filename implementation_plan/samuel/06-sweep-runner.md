@@ -17,7 +17,7 @@ is skipped. No shared state, no locks, no possibility of conflict.
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_sweep.py`:
 
@@ -73,7 +73,7 @@ def test_completed_runs_are_skipped(tmp_path):
     assert done.run_dir not in [c.run_dir for c in remaining]
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_sweep.py -v
@@ -81,7 +81,7 @@ pytest tests/test_sweep.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.sweep'`.
 
-- [ ] **Step 3: Write `src/rlx/sweep.py`**
+- [x] **Step 3: Write `src/rlx/sweep.py`**
 
 ```python
 """Run the experiment matrix in parallel, sharded across machines.
@@ -173,7 +173,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 ```bash
 pytest tests/test_sweep.py -v
@@ -181,7 +181,7 @@ pytest tests/test_sweep.py -v
 
 Expected: 6 passed.
 
-- [ ] **Step 5: Check the matrix without running anything**
+- [x] **Step 5: Check the matrix without running anything**
 
 ```bash
 python -m rlx.sweep --config configs/main.yaml --shard 0/3 --dry-run
@@ -191,7 +191,7 @@ Expected: `shard 0/3: 87 runs pending` (260 split three ways gives 87, 87, 86)
 and a list of triples. If the count is not 260 in total, `configs/main.yaml` is
 wrong — fix the config, not the code.
 
-- [ ] **Step 6: Time a small real sweep**
+- [x] **Step 6: Time a small real sweep**
 
 ```bash
 python -m rlx.sweep --config configs/pilot.yaml --shard 0/1 --workers 8
@@ -216,7 +216,7 @@ seeds: [0, 1]
 estimate the full sweep. If the projection exceeds 6 hours, reduce `total_steps`
 in `main.yaml` now rather than discovering it overnight.
 
-- [ ] **Step 7: Check the pilot results actually learned something**
+- [x] **Step 7: Check the pilot results actually learned something**
 
 ```bash
 python -c "
@@ -230,7 +230,7 @@ for f in sorted(glob.glob('results_pilot/*/*/*/metrics.csv')):
 On `Empty-5` every strategy should end well above 0. If one strategy is flat at
 0.0 while the others learn, that strategy is broken — tell Max, with the numbers.
 
-- [ ] **Step 8: Log and commit**
+- [x] **Step 8: Log and commit**
 
 Append a `docs/decision_log.md` entry with the measured pilot timing and the
 projected full-sweep wall clock, in plain language, plus the final `total_steps`

@@ -11,7 +11,7 @@ Last updated: **2026-08-18**, by Samuel.
 
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
-| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop | — | 6 sweep runner |
+| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
@@ -32,6 +32,8 @@ Everything below is merged and safe to import.
 | `ReplayBuffer` | `rlx.buffer` | Samuel |
 | `DoubleDQNAgent` | `rlx.agent` | Samuel |
 | `run_training(cfg)`, `evaluate`, `python -m rlx.train` | `rlx.train` | Samuel (sweep), anyone wanting a real run |
+| `expand_matrix`, `select_shard`, `pending_runs`, `python -m rlx.sweep` | `rlx.sweep` | all three of us on the 20th |
+| `configs/pilot.yaml` | 16-run smoke sweep | integration day |
 | `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
 | `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
 | `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
@@ -86,6 +88,39 @@ The cause is **episode length**, which MiniGrid varies from 80 to 640 steps
 across our mazes. The bonus is paid per step, so long-episode mazes accumulate
 far more of it. No single `count_beta` balances all 13.
 
+**MEASURED 2026-08-18 at 100k steps with a bonus-free control** (3 seeds each,
+full table in the decision log):
+
+| strategy | Empty-5 | DoorKey-5 |
+|---|---|---|
+| epsilon-greedy (no bonus) | **0.637** | 0.000 |
+| Boltzmann (no bonus) | **0.064** | 0.000 |
+| count_based beta=0.05 (current) | 0.126 | 0.000 |
+| count_based beta=0.01 | **0.573** | 0.000 |
+| count_based beta=0.005 / 0.001 | 0.127 | 0.000 |
+
+**DoorKey-5 is unsolved by everything at 100k**, so count_based's zeros there were
+never a bonus problem. On Empty-5, beta=0.01 (0.573) lands next to the bonus-free
+baseline (0.637) while our current 0.05 (0.126) does not.
+
+Treat this as a sanity check, **not** as the reason: 3 seeds with a 0.955/0.000/
+0.764 spread cannot decide a hyperparameter. We decide on the pre-registered scale
+argument, which points the same way.
+
+**TWO decisions needed before the sweep, not one:**
+
+1. **`count_beta`: 0.05 -> 0.01.**
+2. **Boltzmann's temperature schedule.** Boltzmann scored 0.064 against
+   epsilon-greedy's 0.637 on the *easiest* maze, with no bonus involved. Max
+   predicted why in his own log entry: temperature only means something relative
+   to the Q-values, MiniGrid's action gaps are ~0.01 early on, and our tau is
+   still 0.47 at step 40,000 — so it is still choosing almost at random a quarter
+   of the way through training. Same illness as the bonus: a round number picked
+   without checking it against MiniGrid's actual reward scale.
+
+If we launch as-is, "Boltzmann came last" is a statement about our schedule, not
+about Boltzmann.
+
 **Proposed: `count_beta = 0.01`** — worst case falls from 14x to ~3x while the
 bonus stays meaningful on MultiRoom. **Nobody has changed `config.py`.** This
 needs all three of us to agree, and it must be settled **before the sweep on the
@@ -103,7 +138,9 @@ Reachable counts per maze are in the decision log.
 
 Settled by Samuel's task 2, no longer provisional:
 - `device: cpu` — measured, the GPU is 13% slower. **Do not install a CUDA torch.**
-- `total_steps: 400000`, `snapshot_every: 10000`, `--workers 8`
+- `total_steps: 400000`, `snapshot_every: 10000`, **`--workers 12`** (was 8;
+  see the 2026-08-18 sweep entry — torch is now pinned to one thread per run,
+  which made the pilot 3.4x faster and changed the best worker count)
 - All 13 MiniGrid instances verified on minigrid 3.1.0
 - **MultiRoom grids are 25x25 for every N** — do not hard-code 16
 
@@ -118,6 +155,14 @@ Settled by Samuel's task 2, no longer provisional:
 | Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ✅ **done** |
 
 **Nothing is blocked any more.** Every task in the plan can now proceed.
+
+**SWEEP COMMAND for the 20th** — one per machine, run them at the same time:
+```
+python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 12
+```
+Samuel `0/3`, Max `1/3`, Daniel `2/3`. 87/87/86 runs. Expect **3-4 hours**.
+Safe to re-run: finished runs are skipped, so a crash resumes where it stopped.
+**Do not launch until `count_beta` is decided.**
 
 **The pipeline is verified end to end.** A real 20k-step run on Empty-5 reached
 a score of 0.955, and **Daniel's `load_all` read the result folder our training
