@@ -1049,3 +1049,162 @@ out into its own function so it can be tested directly. There is now a test that
 fails if anyone ever rewrites it as plain DQN — that single line is the whole
 reason we chose Double DQN, and it would otherwise be very easy to "simplify"
 back by accident.
+
+---
+
+## 2026-08-18 — Sweep runner, and a 3.4x speed bug caught by running it for real
+
+**Status:** Active
+
+**What changed:** Built the launcher that runs all 260 experiments in parallel
+across our three machines. Then ran a 16-run pilot for real, which is where the
+interesting part happened.
+
+**The sweep works.** Each machine takes every third experiment from a fixed list,
+so the three of us never need to coordinate. Anything already finished is
+skipped, so a crashed sweep is resumed by simply re-running the same command.
+
+**The failure handling is proven, not assumed.** Four of the pilot's 16 runs used
+NoisyNets, which Max has not merged yet, so they failed. The other 12 finished
+normally and the sweep reported `12 ok, 4 failed`. One broken experiment cannot
+take down the other 259.
+
+**The bug: we were using a quarter of the machine.** The pilot took 6 minutes 6
+seconds. Our day-1 benchmark said it should take about 90 seconds.
+
+The cause: PyTorch defaults to using 6 processor threads per run. That is
+sensible for one big job, but we run 8 experiments side by side, so we had 48
+threads fighting over 12 processor cores. They spent their time interrupting each
+other.
+
+We now tell each run to use exactly one thread. **The same pilot dropped from 6
+minutes 6 seconds to 1 minute 48 — a 3.4x speed-up.** And measured on its own
+with nothing else running, one thread is *still* faster than six (608 steps per
+second against 495), because our network is so small that coordinating threads
+costs more than it saves.
+
+**Why our earlier benchmark missed it:** the day-1 benchmark script set one
+thread explicitly, so it measured the fast case and the real training loop did
+not. A benchmark that does not match what you actually run is worth very little.
+Lesson recorded rather than just fixed.
+
+**Use 12 workers, not 8.** With one thread each, more workers now helps. Measured
+on the pilot: 4 workers 137 s, 8 workers 108 s, **12 workers 81 s**. Twelve
+workers on twelve cores is the natural fit.
+
+**Revised timing for the full sweep:** about **3 to 4 hours across our three
+machines** (13 hours if one machine did it alone). Speed is much the same on
+every maze — between 518 and 629 steps per second — because the agent always
+sees the same small 7x7 view no matter how big the grid is.
+
+**One caveat on the 12-worker number:** the pilot only has 16 experiments, so
+with 12 workers almost everything runs at once and it never reaches a steady
+state. The real sweep has 87 per machine. Watch the first few minutes of the real
+run and drop to 8 workers if the rate looks worse than the pilot suggested.
+
+---
+
+## 2026-08-18 — The count-bonus test at 20k steps was inconclusive
+
+**Status:** OPEN — the count_beta decision is still not settled
+
+**What changed:** Nothing. Recording a test that did not answer the question, so
+nobody repeats it.
+
+**What we tried:** the pilot showed count-based scoring 0 on Empty-5 while
+Boltzmann scored 0.955, which looked like confirmation that the novelty bonus is
+too large. We then ran Empty-5 with four different bonus sizes, three seeds each.
+
+**The result did not support the story:**
+
+| count_beta | mean score over 3 seeds |
+|---|---|
+| 0.05 | 0.000 |
+| 0.01 | 0.000 |
+| 0.005 | 0.318 (one seed of three learned) |
+| 0.001 | 0.000 |
+
+No pattern. One run out of twelve learned, and it was not at the value we
+proposed.
+
+**Why the test was bad:** 20,000 steps is 5% of a real run. On that budget even
+plain epsilon-greedy only managed 0.478, and that strategy has no bonus at all.
+Everything was noise, so the pilot's `count_based = 0` is **not** evidence that
+the bonus is too big — it is evidence that 20,000 steps decides nothing.
+
+**We are not treating this as support for any value of `count_beta`.** Picking
+0.005 because it produced the one non-zero number would be choosing a
+hyperparameter from a single lucky seed, which is exactly the sort of thing the
+report should never contain.
+
+**What we are doing instead:** re-running the comparison at 100,000 steps, which
+is a quarter of the real budget. That result goes in the next entry. The decision
+still has to be made before the sweep launches.
+
+---
+
+## 2026-08-18 — The 100k-step test, with a proper control
+
+**Status:** OPEN — two decisions needed before the sweep launches
+
+**What changed:** Re-ran the bonus-size comparison at 100,000 steps (a quarter of
+the real budget) instead of 20,000, and — the part we were missing before — also
+ran the bonus-free strategies on the same budget as a **control**. Without that
+control, count-based scoring zero somewhere tells us nothing, because we would
+not know whether anything else scores above zero there either.
+
+**All numbers are 3 seeds, score averaged over the last 5 measurements:**
+
+| strategy | Empty-5 | DoorKey-5 |
+|---|---|---|
+| epsilon-greedy (no bonus) | **0.637** | 0.000 |
+| Boltzmann (no bonus) | 0.064 | 0.000 |
+| count-based, beta = 0.05 (current) | 0.126 | 0.000 |
+| count-based, beta = 0.01 | **0.573** | 0.000 |
+| count-based, beta = 0.005 | 0.127 | 0.000 |
+| count-based, beta = 0.001 | 0.127 | 0.000 |
+
+**First and most useful result: DoorKey-5 is unsolved by everything.** Every
+strategy, every bonus size, every seed, all zero. So count-based's zeros there
+were never a bonus problem — nothing learns DoorKey-5 in 100,000 steps. That is
+what the control bought us, and it is why the earlier test was uninterpretable.
+
+**Second: beta = 0.05 does look too big, and 0.01 looks right.** On the one maze
+where anything learns, 0.01 scores 0.573 against 0.126 for our current 0.05 —
+and 0.573 is in line with the bonus-free baseline of 0.637. That is exactly what
+"the bonus should help exploration without drowning the task" should look like.
+
+**How much weight to put on that: some, not a lot.** Three seeds, and the spread
+within one setting is enormous (0.955, 0.000, 0.764 at beta = 0.01). A two-out-of-
+three versus one-out-of-three difference is not a real measurement.
+
+**So we are deciding on the scale argument, not on this table.** The reasoning
+from 2026-08-18 — that a bonus worth 14x the value of winning cannot be right —
+was made *before* any of these runs, and it points at the same answer. This table
+is a sanity check that fails to contradict it, and that is all we should claim.
+Picking 0.01 because it won a noisy three-seed comparison would be choosing our
+own result.
+
+**Recommendation: `count_beta = 0.01`.** Still needs all three of us.
+
+### Third, and this one is new: Boltzmann has the same illness
+
+Boltzmann scored **0.064 on Empty-5 against epsilon-greedy's 0.637** — ten times
+worse, on the easiest maze we have, with no bonus involved at all.
+
+Max predicted this in his own entry above ("temperature only means something
+relative to the Q-values") and our numbers confirm it. MiniGrid scores run from 0
+to 1, so the gap between a good and a bad action is small — often around 0.01
+early on. Our temperature starts at 1.0 and is still 0.47 at step 40,000. Dividing
+a 0.01 difference by a temperature of 0.47 leaves the choices almost
+indistinguishable, so Boltzmann is still picking nearly at random a quarter of
+the way through training.
+
+**This is the same mistake as the bonus size**: both `tau` and `count_beta` were
+chosen as round numbers without checking them against how big MiniGrid's rewards
+actually are.
+
+**We have not changed the temperature schedule.** It needs the same decision, and
+the same discipline: settle it on the scale argument now, before the sweep, and
+do not touch it afterwards. If we run the sweep as-is, "Boltzmann came last" would
+be a statement about our schedule, not about Boltzmann.

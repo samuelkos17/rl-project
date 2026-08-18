@@ -18,6 +18,21 @@ from rlx.exploration import make_explorer
 from rlx.logging import RunLogger
 
 
+def _pin_to_one_thread() -> None:
+    """Give torch a single thread per run.
+
+    Measured 2026-08-18. Our network is tiny, so torch's intra-op threading
+    costs more in coordination than it saves: one thread is 608 steps/s against
+    495 with the default 6, even with the machine otherwise idle.
+
+    It matters far more under the sweep. With 8 worker processes the default
+    would put 8 x 6 = 48 threads on 12 cores, and the measured aggregate
+    collapsed to 874 steps/s. Parallelism belongs at the process level here,
+    not inside torch.
+    """
+    torch.set_num_threads(1)
+
+
 def _seed_everything(seed: int) -> np.random.Generator:
     random.seed(seed)
     np.random.seed(seed)
@@ -69,6 +84,7 @@ def evaluate(agent: DoubleDQNAgent, cfg: RunConfig) -> tuple[float, float]:
 
 def run_training(cfg: RunConfig) -> Path:
     """Train one configuration and write its result directory. Returns the path."""
+    _pin_to_one_thread()
     rng = _seed_everything(cfg.seed)
 
     # CRITICAL: layout_seed = cfg.seed pins one maze for the whole run.
