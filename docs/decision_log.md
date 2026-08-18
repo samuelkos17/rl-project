@@ -724,18 +724,24 @@ neighbours of the route roughly doubles the target on MultiRoom (0.38 → 0.79 o
 N3), so that "within 1 cell" rule is carrying a lot of weight — worth a sentence
 in the report, since a stricter rule would give visibly different numbers.
 
-**A separate thing this uncovered:** the Empty mazes are the *same layout* for
-all 5 seeds — start and goal sit in fixed corners and there is nothing else to
-randomise. The seeds still vary the agent's own randomness, so the runs are not
-duplicates, but the claim in `CLAUDE.md` §7 that "the 5 seeds give 5 layouts per
-instance" is not true for this family. DoorKey and MultiRoom do vary.
+**A separate thing this uncovered:** the Empty mazes looked, from this local
+stub, like the *same layout* for all 5 seeds — start and goal sit in fixed
+corners and there is nothing else to randomise, so the claim in `CLAUDE.md` §7
+that "the 5 seeds give 5 layouts per instance" would not hold for this family.
+Samuel confirmed this independently against his real `envs.py` and worked out
+the consequence for the statistics — see "Environment factory built, and what
+the mazes actually look like" (2026-08-18), Finding 1, below.
 
 **What it means for the results:** These two numbers are what we correlate
 against final performance. Which of the two predicts better is one of the three
 questions the report answers — but on the Empty family the question cannot be
 asked at all, because the two numbers are the same number.
 
-**Measured after the changes:** 45 tests pass (15 new).
+**Measured after the changes:** 45 tests pass (15 new), against the local stub
+of Samuel's task 3 that this entry's own note above describes. After the
+2026-08-18 rebase onto his real `envs.py` (merged in "Environment factory
+built", below), the same 15 coverage tests still pass, now as part of the full
+165 passed, 1 xfailed suite.
 
 
 ## 2026-08-18 — Epsilon-greedy baseline implemented
