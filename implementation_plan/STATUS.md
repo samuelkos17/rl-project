@@ -11,7 +11,7 @@ Last updated: **2026-08-18**, by Samuel.
 
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
-| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer | — | 5 agent + training loop |
+| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop | — | 6 sweep runner |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
@@ -30,6 +30,8 @@ Everything below is merged and safe to import.
 | `reachable_mask`, `bfs_distances` | `rlx.envs` | Daniel (coverage) |
 | `QNetwork`, `NoisyLinear` (placeholder), `obs_to_tensor`, `obs_batch_to_tensor` | `rlx.networks` | **Max (NoisyNets)**, Samuel |
 | `ReplayBuffer` | `rlx.buffer` | Samuel |
+| `DoubleDQNAgent` | `rlx.agent` | Samuel |
+| `run_training(cfg)`, `evaluate`, `python -m rlx.train` | `rlx.train` | Samuel (sweep), anyone wanting a real run |
 | `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
 | `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
 | `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
@@ -113,9 +115,26 @@ Settled by Samuel's task 2, no longer provisional:
 | Daniel 1, 2 | `RunConfig`, `difficulty_index` | Samuel 1 | ✅ **unblocked** |
 | Daniel 3 (coverage) | `grid_info`, `reachable_mask`, `bfs_distances` | Samuel 3 | ✅ **unblocked** |
 | Max 4 (NoisyNets) | `QNetwork`, `NoisyLinear` placeholder | Samuel 4 | ✅ **unblocked** |
-| Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ✅ **unblocked** |
+| Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ✅ **done** |
 
 **Nothing is blocked any more.** Every task in the plan can now proceed.
+
+**The pipeline is verified end to end.** A real 20k-step run on Empty-5 reached
+a score of 0.955, and **Daniel's `load_all` read the result folder our training
+loop wrote with no adjustment** — folder layout, `metrics.csv` columns and
+`visitation.npz` arrays all line up. The biggest integration risk is behind us.
+
+**For Max — one test is waiting on you.** `tests/test_train.py` runs all four
+strategies end to end; the `noisy` case is marked expected-to-fail until
+`rlx.exploration.noisy` exists. It **detects your module automatically**, so the
+moment you merge it becomes a real test. Nothing to delete, but do check it goes
+green rather than staying an `x` in the pytest output.
+
+**For Daniel — a note on `final_return`.** Averaging the last 5 evaluation
+points is right for real runs (80 points), but on short test runs it mixes in
+the pre-learning zeros: our 20k smoke run scored 0.955 at the end and
+`final_return` reported 0.239. Correct by definition, just surprising. Worth a
+sentence in the report so nobody reads a low number as a failed run.
 
 **For Max — your NoisyNets task.** `NoisyLinear` in `src/rlx/networks.py` is a
 placeholder that behaves like a plain `nn.Linear`. Replace its body only: keep
