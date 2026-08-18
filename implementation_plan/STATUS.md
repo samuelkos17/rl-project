@@ -11,7 +11,7 @@ Last updated: **2026-08-18**, by Samuel.
 
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
-| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory | — | 4 network + buffer |
+| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer | — | 5 agent + training loop |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
@@ -28,6 +28,8 @@ Everything below is merged and safe to import.
 | `RunLogger` | `rlx.logging` | Samuel |
 | `make_env`, `grid_info`, `GridInfo` | `rlx.envs` | Daniel (coverage), Samuel |
 | `reachable_mask`, `bfs_distances` | `rlx.envs` | Daniel (coverage) |
+| `QNetwork`, `NoisyLinear` (placeholder), `obs_to_tensor`, `obs_batch_to_tensor` | `rlx.networks` | **Max (NoisyNets)**, Samuel |
+| `ReplayBuffer` | `rlx.buffer` | Samuel |
 | `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
 | `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
 | `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
@@ -110,12 +112,18 @@ Settled by Samuel's task 2, no longer provisional:
 | Max 1, 2, 3 | `RunConfig`, `Explorer` | Samuel 1 | ✅ **unblocked** |
 | Daniel 1, 2 | `RunConfig`, `difficulty_index` | Samuel 1 | ✅ **unblocked** |
 | Daniel 3 (coverage) | `grid_info`, `reachable_mask`, `bfs_distances` | Samuel 3 | ✅ **unblocked** |
-| Max 4 (NoisyNets) | `QNetwork`, `NoisyLinear` placeholder | Samuel 4 | ⏳ blocked |
+| Max 4 (NoisyNets) | `QNetwork`, `NoisyLinear` placeholder | Samuel 4 | ✅ **unblocked** |
 | Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ✅ **unblocked** |
 
-Neither blocked task stops anyone today — Max has three tasks before he needs
-Samuel 4, and Daniel has two before he needs Samuel 3. If a block does bite,
-stub it locally rather than waiting; both task files say how.
+**Nothing is blocked any more.** Every task in the plan can now proceed.
+
+**For Max — your NoisyNets task.** `NoisyLinear` in `src/rlx/networks.py` is a
+placeholder that behaves like a plain `nn.Linear`. Replace its body only: keep
+the class name, the `(in_features, out_features, sigma0)` signature, and the
+`reset_noise()` / `noise_enabled` members, because `QNetwork.reset_noise` and
+`set_noise_enabled` find your layers with `isinstance(m, NoisyLinear)`. Your task
+file has you change it from subclassing `nn.Linear` to subclassing `nn.Module` —
+that is fine and the isinstance checks still work.
 
 ---
 

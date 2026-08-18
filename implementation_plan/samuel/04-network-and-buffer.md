@@ -18,7 +18,7 @@ network is testable now; Max replaces the body, not the class name or signature.
 
 ---
 
-- [ ] **Step 1: Write the failing network test**
+- [x] **Step 1: Write the failing network test**
 
 Create `tests/test_networks.py`:
 
@@ -52,7 +52,7 @@ def test_reset_noise_and_set_noise_enabled_exist_on_both_variants():
         net.set_noise_enabled(True)
 ```
 
-- [ ] **Step 2: Run and watch it fail**
+- [x] **Step 2: Run and watch it fail**
 
 ```bash
 pytest tests/test_networks.py -v
@@ -60,7 +60,7 @@ pytest tests/test_networks.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.networks'`.
 
-- [ ] **Step 3: Write `src/rlx/networks.py`**
+- [x] **Step 3: Write `src/rlx/networks.py`**
 
 ```python
 """The Q-network. One architecture, used by every strategy.
@@ -141,7 +141,7 @@ def obs_batch_to_tensor(obs_batch, device: str) -> torch.Tensor:
     return x.permute(0, 3, 1, 2)
 ```
 
-- [ ] **Step 4: Run the network tests**
+- [x] **Step 4: Run the network tests**
 
 ```bash
 pytest tests/test_networks.py -v
@@ -150,7 +150,7 @@ pytest tests/test_networks.py -v
 Expected: 4 passed. If the flatten size is wrong you will see a shape mismatch
 naming the real number — use that number, do not guess a different one.
 
-- [ ] **Step 5: Write the failing buffer test**
+- [x] **Step 5: Write the failing buffer test**
 
 Create `tests/test_buffer.py`:
 
@@ -203,7 +203,7 @@ def test_same_rng_seed_gives_the_same_sample():
     assert np.array_equal(draw(), draw())
 ```
 
-- [ ] **Step 6: Run and watch it fail**
+- [x] **Step 6: Run and watch it fail**
 
 ```bash
 pytest tests/test_buffer.py -v
@@ -211,7 +211,7 @@ pytest tests/test_buffer.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.buffer'`.
 
-- [ ] **Step 7: Write `src/rlx/buffer.py`**
+- [x] **Step 7: Write `src/rlx/buffer.py`**
 
 Observations are stored as `uint8` on purpose: 100,000 entries at `(7,7,3)` is
 ~15 MB per array, and `float32` would be four times that for no benefit.
@@ -258,7 +258,7 @@ class ReplayBuffer:
                 self._next_obs[idx], self._done[idx])
 ```
 
-- [ ] **Step 8: Run the buffer tests**
+- [x] **Step 8: Run the buffer tests**
 
 ```bash
 pytest tests/test_buffer.py -v
@@ -266,7 +266,7 @@ pytest tests/test_buffer.py -v
 
 Expected: 4 passed.
 
-- [ ] **Step 9: Run the whole suite**
+- [x] **Step 9: Run the whole suite**
 
 ```bash
 pytest -v
