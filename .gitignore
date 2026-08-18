@@ -8,7 +8,7 @@ dist/
 .venv/
 .python-version
 venv/
-
+.idea
 # Results are generated, not source. Committed once at the end in a single
 # dedicated commit -- see CLAUDE.md section 10.
 results/

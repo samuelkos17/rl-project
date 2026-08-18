@@ -837,3 +837,113 @@ and the number is honest. It is only misleading if someone calls the bonus
 function on its own, as our tests do.
 
 **Measured after the change:** 56 tests pass (47 before, 9 new).
+
+---
+
+## 2026-08-18 — Environment factory built, and what the mazes actually look like
+
+**Status:** Active — implements the 2026-08-17 entry "Each run gets one fixed maze"
+
+**What changed:** Wrote the code that builds all 13 mazes, pins each run to one
+layout, and works out which squares are reachable. 48 tests pass.
+
+**The reachable-square counts**, which are the denominators every coverage
+percentage in the report gets divided by:
+
+| maze | grid | reachable squares | states (x4 facings) |
+|---|---|---|---|
+| Empty-5 / 8 / 16 | 5x5 / 8x8 / 16x16 | 9 / 36 / 196 | 36 / 144 / 784 |
+| DoorKey-5 ... 10 | 5x5 ... 10x10 | 7 / 13 / 21 / 31 / 57 | 28 / 52 / 84 / 124 / 228 |
+| MultiRoom-N2 ... N6 | 25x25 | 19 / 29 / 46 / 53 / 58 | 76 / 116 / 184 / 212 / 232 |
+
+Empty-5 = 9 and Empty-8 = 36 match what we worked out by hand, which is the check
+that the wall detection is right.
+
+**Note for MultiRoom:** only 3-9% of the 25x25 grid is reachable, because the
+rooms sit in a corner of a big canvas. Coverage is measured against reachable
+squares, not the whole grid — otherwise every MultiRoom number would look
+absurdly small for no real reason.
+
+**Finding 1: `Empty` gives the same maze for all 5 seeds.** It has no random
+parts — the agent always starts in the same corner and the goal is always in the
+opposite one. DoorKey and MultiRoom do give 5 genuinely different mazes.
+
+So for Empty, our 5 seeds differ only in how the network is initialised and how
+exploration rolls its dice, not in the maze. That is fine — Empty is our sanity
+check, not a real test — but it means **Empty's five runs are less independent
+than the other families' five runs**, and the report should not present them as
+if they were the same kind of replicate.
+
+There is a knock-on effect Daniel should expect: because the maze is identical
+*and* scoring is deterministic, every seed that solves Empty optimally gets the
+**same** score. So Empty may well come out with little or no variation in final
+score, which makes a within-maze correlation undefined there. That is the
+"no variance, excluded" case Daniel already built handling for — we are telling
+him it is likely to happen systematically on Empty, not just by bad luck.
+
+**Finding 2: MultiRoom mazes vary a lot in size between seeds.** MultiRoom-N2
+ranges from 11 reachable squares (seed 2) to 33 (seed 1) — three times bigger.
+The room count is fixed but the room *sizes* are random.
+
+Each run's coverage is divided by its own maze's size, so the percentages are
+still correct. But it does mean the five runs of one MultiRoom setting are not
+five attempts at the same difficulty — they are five attempts at noticeably
+different mazes. Expect the MultiRoom correlations to be noisier than the DoorKey
+ones, and say so in the report rather than treating it as a surprise.
+
+DoorKey does not have this problem: the wall and key move around, but the number
+of reachable squares is identical across seeds.
+
+**What it means for the results:** Nothing is broken. Two things to write in the
+report's limitations: Empty's seeds are weaker replicates, and MultiRoom's seeds
+vary in maze size.
+
+---
+
+## 2026-08-18 — Measuring Max's count-bonus question against the real mazes
+
+**Status:** OPEN — needs all three of us to agree, **before the sweep launches on
+the 20th**
+
+**What changed:** Nothing yet. Max flagged that the novelty bonus looks far too
+big (`docs/decision_log.md`, "Count-based exploration implemented"). His estimate
+used a made-up episode; we measured it on the actual mazes with a random policy.
+
+**He was right, and the reason matters:**
+
+| maze | episode length | novelty reward per episode | vs the 0.9 for winning |
+|---|---|---|---|
+| Empty-5 | 91 steps | 1.42 | 1.6x |
+| DoorKey-8 | 640 steps | 12.71 | **14.1x** |
+| MultiRoom-N4 | 80 steps | 1.41 | 1.6x |
+| MultiRoom-N6 | 120 steps | 1.92 | 2.1x |
+
+**The cause is episode length, not the bonus itself.** MiniGrid gives DoorKey-8
+640 steps per attempt but MultiRoom-N4 only 80. The novelty bonus is paid per
+step, so long-episode mazes accumulate roughly eight times more of it. One single
+setting of `count_beta` therefore lands very differently across our 13 mazes.
+
+**Why this is a problem for the report, not just for tuning:** on DoorKey the
+agent would be paid roughly 14x more for sightseeing than for winning, so it may
+simply never learn the task there. We would then report "count-based does badly
+on DoorKey" when the honest statement is "our bonus size was wrong for DoorKey's
+episode length". That is a conclusion about our settings masquerading as a
+conclusion about the method.
+
+**The awkward part: no single value fixes it.** Sized to make DoorKey balanced
+(`beta` about 0.0035), the bonus becomes almost invisible on MultiRoom — the
+hardest mazes, where we most want it working. Sized for MultiRoom, DoorKey stays
+swamped. Episode lengths differ by 7x and the bonus cannot know that.
+
+**Recommendation: `count_beta = 0.01`** (down from 0.05). The worst case drops
+from 14x to about 3x, and the bonus stays meaningful on MultiRoom. It is a
+compromise, chosen on this scale argument alone.
+
+**The rule that matters more than the value:** we pick this **now, before any
+real runs**, and we do not touch it again. Changing it after seeing which
+strategy wins would mean choosing our result, which is exactly the fishing
+expedition the spec was written to prevent. If 0.01 turns out badly, that is a
+finding we report, not a number we quietly revise.
+
+Whatever we choose goes in the report's limitations with these measurements
+attached, because a reader can reasonably ask why 0.01 and not something else.

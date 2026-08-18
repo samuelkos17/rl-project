@@ -134,6 +134,9 @@ From `CLAUDE.md` §2. Repeated here because they are easy to skip:
    **for us to run**. When Claude reaches one, it stops and reports what changed,
    what it tested, and a suggested commit message. We review and commit. See
    `CLAUDE.md` Rule 7.
+8. **Branch before you start.** Claude checks `git branch --show-current` at the
+   start of every task and stops if it says `main`. Create your feature branch
+   first — `core/<topic>`, `exploration/<topic>`, `analysis/<topic>`.
 
 ---
 

@@ -113,6 +113,14 @@ When a piece of work is finished, **stop and say so**, and give us:
 Then wait. Do not stage anything "to be helpful" — an unexpected staged change is
 worse than no help at all, because we might commit something we never reviewed.
 
+**Check the branch before starting any task, and say something if it is wrong.**
+Run `git branch --show-current` first. If it is `main`, stop and tell us to
+create a feature branch (`core/<topic>`, `exploration/<topic>`,
+`analysis/<topic>` — see §10) before you write anything. You cannot create it
+yourself, so silently working on `main` and mentioning it afterwards is not
+acceptable: by then the work is already in the wrong place. Refusing to run the
+command is only half the job; the other half is telling us what to run.
+
 **This overrides the plan files.** `implementation_plan/**` contains steps like
 "Step N: Commit" with `git add` / `git commit` commands in them. Those commands
 are **for us to run, not for you**. When you reach such a step, treat it as
