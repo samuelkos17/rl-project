@@ -3,7 +3,7 @@
 **Update this whenever you finish a task, before you open the PR.** It is the one
 place the other two look to answer "can I start yet?".
 
-Last updated: **2026-08-18**, by Max.
+Last updated: **2026-08-18**, by Samuel.
 
 ---
 
@@ -11,7 +11,7 @@ Last updated: **2026-08-18**, by Max.
 
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
-| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark | — | 3 env factory |
+| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory | — | 4 network + buffer |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation | — | 3 coverage metrics |
 
@@ -26,6 +26,8 @@ Everything below is merged and safe to import.
 | `make_explorer`, `STRATEGIES` | `rlx.exploration` | Max |
 | `ENV_IDS`, `difficulty_index` | `rlx.envs` | Daniel |
 | `RunLogger` | `rlx.logging` | Samuel |
+| `make_env`, `grid_info`, `GridInfo` | `rlx.envs` | Daniel (coverage), Samuel |
+| `reachable_mask`, `bfs_distances` | `rlx.envs` | Daniel (coverage) |
 | `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
 | `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
 | `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
@@ -66,6 +68,35 @@ reached, so early on the bonus is the only learning signal there is. Decide
 together before anyone edits `config.py`; full numbers in `docs/decision_log.md`
 under "2026-08-18 — Count-based exploration implemented".
 
+**Answer for Daniel — logging cadence.** `train.py` calls `logger.log_step(...)`
+**only inside the evaluation block**, so `metrics.csv` gets exactly one row per
+evaluation point and `eval_return_mean` is never empty. I am committing to that
+design, so `final_return` can rely on it. Your `dropna` before taking the tail is
+harmless and worth keeping as a guard — do not remove it.
+
+**Answer for Max — the bonus scale, measured on the real mazes.** You were right.
+Measured with a random policy: Empty-5 1.6x, **DoorKey-8 14.1x**, MultiRoom-N4
+1.6x, MultiRoom-N6 2.1x the value of winning.
+
+The cause is **episode length**, which MiniGrid varies from 80 to 640 steps
+across our mazes. The bonus is paid per step, so long-episode mazes accumulate
+far more of it. No single `count_beta` balances all 13.
+
+**Proposed: `count_beta = 0.01`** — worst case falls from 14x to ~3x while the
+bonus stays meaningful on MultiRoom. **Nobody has changed `config.py`.** This
+needs all three of us to agree, and it must be settled **before the sweep on the
+20th** — changing it after seeing which strategy wins would be choosing our own
+result. Full numbers in `docs/decision_log.md`, "Measuring Max's count-bonus
+question against the real mazes".
+
+**For Daniel — two things about the mazes that affect your analysis.**
+`Empty` gives the *same* maze for all 5 seeds (it has no random parts), and
+scoring is deterministic, so Empty may show **zero variance in final score** —
+your "no variance, excluded" path will fire there systematically, not by chance.
+And MultiRoom maze *size* varies up to 3x between seeds (N2: 11 to 33 reachable
+squares), so its within-maze correlations will be noisier than DoorKey's.
+Reachable counts per maze are in the decision log.
+
 Settled by Samuel's task 2, no longer provisional:
 - `device: cpu` — measured, the GPU is 13% slower. **Do not install a CUDA torch.**
 - `total_steps: 400000`, `snapshot_every: 10000`, `--workers 8`
@@ -78,7 +109,7 @@ Settled by Samuel's task 2, no longer provisional:
 |---|---|---|---|
 | Max 1, 2, 3 | `RunConfig`, `Explorer` | Samuel 1 | ✅ **unblocked** |
 | Daniel 1, 2 | `RunConfig`, `difficulty_index` | Samuel 1 | ✅ **unblocked** |
-| Daniel 3 (coverage) | `grid_info`, `reachable_mask`, `bfs_distances` | Samuel 3 | ⏳ blocked |
+| Daniel 3 (coverage) | `grid_info`, `reachable_mask`, `bfs_distances` | Samuel 3 | ✅ **unblocked** |
 | Max 4 (NoisyNets) | `QNetwork`, `NoisyLinear` placeholder | Samuel 4 | ⏳ blocked |
 | Samuel 5 (training loop) | `RunLogger` | Daniel 1 | ✅ **unblocked** |
 

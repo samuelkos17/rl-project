@@ -21,7 +21,7 @@ bool array shape `(W, H)` where True means impassable; `key` and `door` are
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_envs.py`:
 
@@ -100,7 +100,7 @@ def test_reachable_mask_excludes_walls():
     assert not (reachable_mask(info) & info.walls).any()
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_envs.py -v
@@ -108,7 +108,7 @@ pytest tests/test_envs.py -v
 
 Expected: `ModuleNotFoundError: No module named 'rlx.envs'`.
 
-- [ ] **Step 3: Write `src/rlx/envs.py`**
+- [x] **Step 3: Write `src/rlx/envs.py`**
 
 ```python
 """Environment construction, grid layout extraction, and grid BFS.
@@ -242,7 +242,7 @@ def bfs_distances(info: GridInfo, source: tuple[int, int]) -> np.ndarray:
     return dist
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 ```bash
 pytest tests/test_envs.py -v
@@ -261,7 +261,7 @@ Two failures are plausible and each has a specific cause:
 
 Fix, re-run, and only move on when the output actually says all passed.
 
-- [ ] **Step 5: Sanity-check the coverage denominators by hand**
+- [x] **Step 5: Sanity-check the coverage denominators by hand**
 
 ```bash
 python -c "
@@ -276,7 +276,7 @@ Read the numbers and check they are sensible: `Empty-5` should have 9 reachable
 cells (a 3x3 interior), `Empty-8` should have 36. If a number is wildly off, the
 wall extraction is wrong — fix it before Daniel builds coverage on top.
 
-- [ ] **Step 6: Log the change**
+- [x] **Step 6: Log the change**
 
 The layout-pinning *decision* is already recorded in `docs/decision_log.md`
 (entry "Each run gets one fixed maze, and evaluation runs 1 episode",
