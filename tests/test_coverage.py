@@ -106,6 +106,25 @@ def test_early_auc_ignores_everything_after_the_window():
     assert np.isclose(early_auc(steps, cov, 100_000, frac=0.2), 0.3, atol=0.02)
 
 
+def test_early_auc_refuses_a_window_it_cannot_integrate():
+    """The pilot config's shape: 20k steps, snapshots every 10k. The early window
+    is 4k wide, so NO snapshot lands in it. Returning a number here would be a
+    quiet lie -- the only honest value available is coverage at step 10,000,
+    which is 2.5x outside the window it claims to summarise."""
+    steps = np.array([10_000, 20_000])
+    cov = np.array([0.30, 0.55])
+    with pytest.raises(ValueError, match="snapshot_every"):
+        early_auc(steps, cov, total_steps=20_000, frac=0.2)
+
+
+def test_early_auc_refuses_a_single_point_in_the_window():
+    """One point is not an area. Trapezoid over a zero-width interval would also
+    divide by zero, so this must raise rather than return inf or NaN."""
+    steps = np.array([10_000, 50_000, 90_000])
+    with pytest.raises(ValueError, match="snapshot_every"):
+        early_auc(steps, np.array([0.1, 0.5, 0.9]), total_steps=100_000, frac=0.2)
+
+
 def test_faster_exploration_gives_a_larger_auc():
     steps = np.linspace(0, 100_000, 101)
     fast = 1 - np.exp(-steps / 10_000)

@@ -105,10 +105,23 @@ def early_auc(steps: np.ndarray, coverage: np.ndarray,
 
     Dividing by the window width puts the result in [0, 1], so it is comparable
     across environments and step budgets.
+
+    Raises ValueError if fewer than two snapshots fall inside the window. An
+    earlier version returned `coverage[0]` instead, which on a short run is the
+    coverage at the FIRST snapshot -- a point outside the window entirely, handed
+    back as a normal-looking float. This is the project's main predictor, so a
+    quiet substitute here is worse than a crash: it would be read as a real
+    measurement. Same rule as "no variance, excluded" in the statistics layer --
+    never silently stand in for a number we could not compute.
     """
     window = frac * total_steps
     inside = steps <= window
     if inside.sum() < 2:
-        return float(coverage[0]) if len(coverage) else 0.0
+        raise ValueError(
+            f"early-AUC window is {window:.0f} steps ({frac:.0%} of {total_steps}) "
+            f"but only {int(inside.sum())} of {len(steps)} snapshots fall inside it "
+            f"(first snapshot at step {int(steps[0]) if len(steps) else 'n/a'}). "
+            f"Lower snapshot_every for this run: the window needs at least 2 points."
+        )
     return float(np.trapezoid(coverage[inside], steps[inside]) /
                  (steps[inside][-1] - steps[inside][0]))

@@ -1382,3 +1382,67 @@ wrong; the bug was entirely in the fixture generator. `results_synthetic/` and
 Task 4's pipeline test runs against them — they are gitignored, so this is a
 local `python scripts/make_synthetic_results.py` step for whoever runs Task 4,
 not a data file to commit.
+
+---
+
+## 2026-08-18 — The pilot could not measure early coverage, and said nothing
+
+**Status:** Fixed in `analysis/coverage.py`; one open item for Samuel in
+`configs/pilot.yaml`
+
+**What changed:** `early_auc()` now stops with an error when it does not have
+enough data to compute an answer, instead of quietly returning a substitute.
+
+**What "early coverage" is:** our central claim is that agents which spread out
+early do better later. To measure "early", we take the coverage curve over the
+first fifth of training and average it. That single number is the main predictor
+in the whole project.
+
+**The bug:** during a run we do not record coverage continuously — we save a
+snapshot of where the agent has been every 10,000 steps. The real runs are
+400,000 steps long, so the "first fifth" is 80,000 steps and **8 snapshots** fall
+inside it. Plenty to average.
+
+But the pilot run — the cheap 20,000-step rehearsal we do before committing to
+the real thing — is 20 times shorter. Its "first fifth" is only 4,000 steps, and
+the first snapshot is not taken until step 10,000. So **not a single snapshot
+falls inside the window**.
+
+Instead of saying so, the function fell back to returning the coverage at the
+first snapshot it had — step 10,000. That value is two and a half times further
+into the run than the window it claims to describe, and it comes back as an
+ordinary-looking number. Nothing in the output distinguishes it from a real
+measurement.
+
+**Why that is worse than crashing:** the pilot exists to rehearse the entire
+pipeline before we spend 3-4 hours on 260 real runs. Of all the numbers it
+produces, this is the one that matters most. A silent substitute means the pilot
+would report a plausible value for a quantity it never actually computed — so if
+the calculation itself were broken, the rehearsal would pass anyway.
+
+This is the same principle we already agreed on elsewhere: an environment where
+every run scores identically has no meaningful correlation, and we record that as
+"no variance, excluded" rather than letting an empty value slip through. A number
+we could not compute must never be replaced by one we could.
+
+**The fix:** `early_auc()` raises an error naming the actual numbers and the
+setting to change:
+
+```
+early-AUC window is 4000 steps (20% of 20000) but only 0 of 2 snapshots
+fall inside it (first snapshot at step 10000). Lower snapshot_every for
+this run: the window needs at least 2 points.
+```
+
+**Still open, for Samuel:** `configs/pilot.yaml` should set
+`snapshot_every: 1000`, which puts 4 snapshots in the window and lets the pilot
+genuinely test this metric. 20 snapshots per run instead of 2, about 1 KB each —
+the cost is nothing. Noted for him in `implementation_plan/STATUS.md`.
+
+**Measured after the change:** 167 tests pass, 1 expected-to-fail (was 165 + 1;
+two new tests cover the pilot's exact shape and the one-snapshot case). All 120
+synthetic runs still compute normally, `early_auc` between 0.161 and 0.522 —
+real 400,000-step runs are untouched by this, as intended.
+
+**What it means for the results:** No published number changes. What changes is
+that a badly configured run can no longer produce a quiet, wrong one.
