@@ -647,7 +647,96 @@ rises across the three families, as the hypothesis predicts. On the empty
 dataset it is -0.17 to +0.14 with nothing statistically meaningful. Both
 datasets regenerate byte-for-byte identically.
 
----
+## 2026-08-17 — Two ways of measuring coverage
+
+**Status:** Active
+
+**What changed:** We now measure how much of a maze the agent visited, in two
+different ways.
+
+"Raw coverage" is the simple one: of all the places the agent could possibly
+reach, what fraction did it actually stand in (counting the 4 directions it can
+face as different situations)?
+
+"Task-relevant coverage" only counts places that matter for solving the maze —
+on or next to the shortest route, or right beside the key, the door, or the goal.
+The idea is that wandering into an irrelevant corner is exploring, but not
+*usefully* exploring.
+
+**The DoorKey detail worth remembering:** for those mazes the route is
+start → key → door → goal, not start → goal. The straight line to the goal goes
+through a locked door, so it is not the actual task. We got this wrong in an
+earlier sketch and it would have made task-relevant coverage meaningless on the
+whole DoorKey family.
+
+**A neat trick we used:** to find every cell lying on a shortest route from A to
+B without listing all the routes, check whether (distance from A to that cell) +
+(distance from that cell to B) equals the total distance from A to B. If it does,
+the cell is on some shortest route. Two distance calculations instead of an
+explosion of paths.
+
+### Correction found while building this: the MultiRoom doors
+
+The planned version of this code treated "the maze has a door" as "the route
+must detour through that door". That is right for DoorKey, which has exactly one
+door and locks it. It is wrong for MultiRoom, where the rooms are simply joined
+by doorways: those doors are not obstacles, the shortest route already passes
+through them, and the layout reader only remembers the *last* doorway it happens
+to find. So the code would have bent the route towards one arbitrary doorway and
+pulled a completely unrelated room into the "task-relevant" set.
+
+The fix is one line of judgement: a door only counts as a waypoint if the maze
+also has a key. Only DoorKey has one. There is a test that fails if anyone
+reverts this.
+
+### A limitation we should state in the report rather than hide
+
+On the **Empty family the two coverage numbers are identical, by construction**,
+for every seed. In an open room the start is one corner and the goal is the
+opposite corner, and in an open grid *every* square between two opposite corners
+lies on some shortest route. So "the useful part of the maze" is the whole maze,
+and task-relevant coverage equals raw coverage exactly. This is not a bug and no
+change to the code fixes it — it is what the definition means on an empty room.
+
+Measured, one layout per instance, before any widening of the route:
+
+| maze | reachable squares | on the route | + neighbours | final ratio |
+|---|---|---|---|---|
+| Empty-5 | 9 | 9 | 9 | 1.00 |
+| Empty-8 | 36 | 36 | 36 | 1.00 |
+| Empty-16 | 196 | 196 | 196 | 1.00 |
+| DoorKey-5 | 7 | 7 | 7 | 1.00 |
+| DoorKey-6 | 13 | 9 | 13 | 1.00 |
+| DoorKey-7 | 21 | 10 | 17 | 0.81 |
+| DoorKey-8 | 31 | 12 | 20 | 0.65 |
+| DoorKey-10 | 57 | 17 | 27 | 0.47 |
+| MultiRoom-N2 | 19 | 8 | 14 | 0.74 |
+| MultiRoom-N3 | 29 | 11 | 23 | 0.79 |
+| MultiRoom-N4 | 46 | 21 | 37 | 0.80 |
+| MultiRoom-N5 | 53 | 26 | 44 | 0.83 |
+| MultiRoom-N6 | 58 | 29 | 50 | 0.86 |
+
+Two things to take from that table. First, the distinction between the two
+coverage measures only does real work on the larger DoorKey mazes, where it
+narrows the target to under half the maze. That is also where we expect the
+hypothesis to show itself, so this is the useful case. Second, counting
+neighbours of the route roughly doubles the target on MultiRoom (0.38 → 0.79 on
+N3), so that "within 1 cell" rule is carrying a lot of weight — worth a sentence
+in the report, since a stricter rule would give visibly different numbers.
+
+**A separate thing this uncovered:** the Empty mazes are the *same layout* for
+all 5 seeds — start and goal sit in fixed corners and there is nothing else to
+randomise. The seeds still vary the agent's own randomness, so the runs are not
+duplicates, but the claim in `CLAUDE.md` §7 that "the 5 seeds give 5 layouts per
+instance" is not true for this family. DoorKey and MultiRoom do vary.
+
+**What it means for the results:** These two numbers are what we correlate
+against final performance. Which of the two predicts better is one of the three
+questions the report answers — but on the Empty family the question cannot be
+asked at all, because the two numbers are the same number.
+
+**Measured after the changes:** 45 tests pass (15 new).
+
 
 ## 2026-08-18 — Epsilon-greedy baseline implemented
 

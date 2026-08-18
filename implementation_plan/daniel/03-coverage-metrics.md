@@ -62,7 +62,7 @@ area.
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_coverage.py`. The hand-built fixtures matter more than the
 end-to-end checks — they are what catch an off-by-one in the denominator.
@@ -183,13 +183,13 @@ def test_faster_exploration_gives_a_larger_auc():
     assert early_auc(steps, fast, 100_000) > early_auc(steps, slow, 100_000)
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_coverage.py -v
 ```
 
-- [ ] **Step 3: Write `src/rlx/analysis/coverage.py`**
+- [x] **Step 3: Write `src/rlx/analysis/coverage.py`**
 
 ```python
 """Coverage metrics, derived from saved visitation snapshots.
@@ -299,7 +299,7 @@ Note: `np.trapezoid` is the numpy 2.0 name. On older numpy it is `np.trapz`. If
 you get an `AttributeError`, check your numpy version and use the name that
 exists — do not write your own trapezoid rule.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 ```bash
 pytest tests/test_coverage.py -v
@@ -311,7 +311,7 @@ Likely failure and its cause: `test_a_detour_is_not_task_relevant` passing when
 it should fail usually means `_dilate` is being applied more than once, which
 swells the mask until it covers everything. One dilation only.
 
-- [ ] **Step 5: Sanity-check the denominators on real mazes**
+- [x] **Step 5: Sanity-check the denominators on real mazes**
 
 ```bash
 python -c "
@@ -329,7 +329,7 @@ and the ratio should be well under 1.0 on the bigger mazes — that is the whole
 point of the distinction. If the ratio is ~1.0 everywhere, the mask is too
 generous and the raw/task-relevant comparison will show nothing.
 
-- [ ] **Step 6: Log the change**
+- [x] **Step 6: Log the change**
 
 Append to `docs/decision_log.md`, in plain language:
 
