@@ -947,3 +947,48 @@ finding we report, not a number we quietly revise.
 
 Whatever we choose goes in the report's limitations with these measurements
 attached, because a reader can reasonably ask why 0.01 and not something else.
+
+---
+
+## 2026-08-18 — The neural network and the memory of past experiences
+
+**Status:** Active
+
+**What changed:** Built the two pieces the agent needs before it can learn: the
+network that estimates how good each action is, and the replay buffer that
+remembers past experiences to learn from. 16 new tests, 120 passing overall.
+
+**The network:** it reads the agent's 7x7 view through three small
+pattern-detecting layers, then two ordinary layers that output one number per
+action. **76,599 numbers get adjusted during learning** — genuinely small, which
+is exactly why the graphics card lost the benchmark on the 17th.
+
+**The replay buffer** holds the last 100,000 experiences and uses **31 MB**. We
+store the views as whole numbers rather than decimals, which costs a quarter of
+the memory and loses nothing, because MiniGrid views are whole numbers to begin
+with.
+
+**One number worth checking, and we did:** the network divides every input by 10
+to keep values in a sensible range. That only works if the raw values never go
+much above 10. We measured all 13 mazes with a random agent: the largest value
+ever seen was **8**, giving 0.8 after dividing. So inputs stay under 1 as
+intended, in every maze.
+
+**Something deliberately left unfinished:** `NoisyLinear` is currently a normal
+network layer that does nothing special. It is a **placeholder** so the network
+can be built and tested now. Max replaces its insides in his task 4 — the name
+and the way it is called are fixed, so his change will drop straight in without
+touching anything else. **Max is now unblocked.**
+
+**Two safety tests worth knowing about**, because both catch mistakes that would
+be invisible rather than loud:
+
+- One checks that a remembered experience keeps its parts together — the right
+  action with the right reward with the right next view. If those ever got
+  shuffled, the agent would train on nonsense and nothing would crash.
+- One checks the buffer never hands back empty slots while it is still filling.
+  Early in training it holds only a few thousand of its 100,000 slots, and
+  sampling blank ones would quietly teach the agent that doing nothing is fine.
+
+**What it means for the results:** Nothing yet. This is machinery. The training
+loop that uses it is next.
