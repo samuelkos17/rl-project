@@ -15,7 +15,7 @@ Last updated: **2026-08-18**, by Daniel.
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics | — | 4 statistics |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics (except rliable, blocked) | — | 5 figures |
 
 
 ## What is available on `main` right now
@@ -42,6 +42,8 @@ Everything below is merged and safe to import.
 | `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
 | `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
+| `raw_coverage`, `task_relevant_coverage`, `task_relevant_mask`, `early_auc` | `rlx.analysis.coverage` | Daniel |
+| `build_analysis_table`, `within_instance_correlation`, `aggregate_correlation`, `iqm_by_strategy`, `rank_stability`, `probability_of_improvement` | `rlx.analysis.stats` | Daniel (figures), report |
 | `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |
 
 Settled by Daniel's task 2:
@@ -107,6 +109,46 @@ often than it evaluates, most rows carry an empty `eval_return_mean`.
 `rlx.analysis.aggregate.final_return` now drops the empty entries before taking
 the tail, so it is correct either way — but if you intend to log at a different
 cadence than you evaluate, say so, because it changes how `metrics.csv` looks.
+
+**For BOTH of you — `rliable` does not import in our environment. Check yours.**
+
+```
+python -c "from rliable import library"
+```
+
+If that raises `TypeError: deprecate_kwarg() missing 1 required positional
+argument`, you have the same problem. Cause: `requirements.txt` allows any
+`pandas>=2.0`, pip installed **pandas 3.0.5**, pandas 3 changed an internal
+helper, and `arch` 7.2.0 (which `rliable` imports for its stratified bootstrap)
+still calls it the old way.
+
+This matters because the proposal commits to `rliable` for the aggregate
+strategy comparison and the professor approved that choice. No test imported it
+until Daniel's task 4, which is why it stayed hidden.
+
+**Verified fix, NOT yet applied — needs a team decision:**
+- `arch>=8.0` (8.0.0 vendors its own copy of the helper — checked in the package
+  itself, not guessed — and allows `pandas>=1.4.0` with no upper bound).
+  **Recommended:** upgrades one leaf dependency, pandas stays current.
+- or pin `pandas>=2.0,<3`. Also works, but steps a core library back.
+
+Our own code touches only `pd.DataFrame`, `pd.read_csv` and `pd.errors`, so it is
+unaffected either way. Whoever decides: change `requirements.txt`, add a
+`docs/decision_log.md` note (CLAUDE.md §3), and tell the other two to re-run
+`pip install -r requirements.txt`.
+
+Until then `rlx.analysis.stats.rliable_aggregate` **does not exist**. It was left
+unwritten rather than written untested. `iqm_by_strategy` covers the per-instance
+bars without rliable, so only the single cross-instance aggregate is missing.
+
+**For Daniel (task 5) — the fixture cannot check the difficulty trend.**
+`aggregate_correlation` reports `trend_with_difficulty`, and on the synthetic
+fixture it is `NaN` — correctly. The fixture has only 2 instances per family
+(below the 3 required for a meaningful Spearman) **and** its generator sets the
+effect strength per *family*, so Empty-5 and Empty-8 have identical strength by
+construction. The logic has unit-test coverage
+(`test_difficulty_trend_does_not_mix_families`), but no end-to-end check. Extending
+`FIXTURE_ENV_IDS` to all 13 instances with a within-family gradient would fix that.
 
 **For Samuel — `configs/pilot.yaml` cannot measure the project's main predictor.**
 

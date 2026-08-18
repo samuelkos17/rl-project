@@ -1446,3 +1446,110 @@ real 400,000-step runs are untouched by this, as intended.
 
 **What it means for the results:** No published number changes. What changes is
 that a badly configured run can no longer produce a quiet, wrong one.
+
+---
+
+## 2026-08-18 — The statistics trap we nearly walked into, and one we walked into
+
+**Status:** Active. One part of the task is blocked — see the last section.
+
+**What changed:** Wrote `src/rlx/analysis/stats.py`, the code that turns 260 runs
+into the answers the report is built around. 13 tests.
+
+### The trap the plan warned us about
+
+Both things we measure get worse as mazes get harder. Agents cover less of a hard
+maze, and they score worse on it. So if you throw all 260 runs into one pile and
+ask "does more coverage go with a better score?", you get a big confident yes —
+and it means nothing at all. It is the sentence "hard mazes are hard", measured
+twice and mistaken for a discovery.
+
+The fix is to ask the question **separately inside each maze**, where every run
+faced the same difficulty, and only then combine the answers. There is a test,
+`test_pooling_and_within_instance_disagree`, built on data where the piled-up
+answer is strongly positive and the correct answer is negative. If anyone ever
+"simplifies" this back into one big correlation, that test goes red.
+
+### The trap we did walk into
+
+The plan's own code contained the same mistake in a second place, and we only
+caught it by running the finished pipeline and looking at the number.
+
+Alongside the main result we report a trend: *does the effect get stronger as
+mazes get harder?* That is one of the three things the professor asked us to
+show. The code compared each maze's result against its "difficulty" number — and
+that number means **different things in different families**. For Empty and
+DoorKey it is the width of the grid (5, 8, 16). For MultiRoom it is the number of
+rooms (2 to 6).
+
+So MultiRoom-N2 carries the number 2 and sorts to the "easiest" end, while it is
+in truth one of the hardest mazes we have: 19 walkable squares on a 25x25 canvas.
+Sorting all 13 mazes by that mixed-up number and drawing a trend through them
+produced **-0.53 on our test data — the wrong sign**. The effect looked like it
+was fading on harder mazes when the data said no such thing.
+
+We had already written this rule down twice, in `STATUS.md` and in the comments
+of the aggregation code: *difficulty is comparable only within a family, never
+across.* We wrote the rule and then broke it ourselves one file later.
+
+**The fix:** measure the trend inside each family separately, then average. A
+family needs at least 3 mazes to count — with only 2 the answer is +1 or -1 by
+arithmetic and carries no information. `test_difficulty_trend_does_not_mix_families`
+builds data where the effect rises inside every family while the mixed-up version
+comes out negative, and fails if anyone reverts this.
+
+**What it means for the results:** this would not have crashed and would not have
+looked wrong. It would have put a confident negative number in the report,
+against one of the three headline questions.
+
+### What the fake data says
+
+Running the finished pipeline over the 120 synthetic runs recovers the effect
+that was deliberately built into them:
+
+| coverage measure | mean correlation | 95% interval | supports H1? |
+|---|---|---|---|
+| raw | **+0.773** | +0.628 to +0.903 | yes |
+| task-relevant | **+0.713** | +0.597 to +0.816 | yes |
+
+The trend-with-difficulty number comes out as "cannot measure" on this data, and
+that is correct: the fake data has only 2 mazes per family, below the 3 we
+require, **and it never varied the effect strength within a family in the first
+place** — the generator sets it per family, so Empty-5 and Empty-8 are given the
+same strength by construction. The trend code is covered by its unit test, but
+the fixture cannot check it end to end. Worth fixing in the fixture before the
+real numbers arrive, so that this path is exercised on something.
+
+### Blocked: the rliable comparison
+
+The proposal commits to the `rliable` library for the aggregate strategy
+comparison, and the professor's feedback approved that choice. **It does not
+currently import**, on Daniel's machine and probably on all three:
+
+```
+TypeError: deprecate_kwarg() missing 1 required positional argument
+```
+
+The chain: our `requirements.txt` allows any `pandas>=2.0`, so pip installed
+**pandas 3.0.5**. pandas 3 changed the signature of an internal helper. The
+`arch` library (version 7.2.0) still calls it the old way and dies on import.
+`rliable` imports `arch` at the top of its file, so `rliable` dies with it. The
+part of `arch` involved is exactly the stratified bootstrap our confidence
+intervals are supposed to use.
+
+Nothing detected this earlier because no test imported `rliable` until now. Left
+alone, it would have surfaced on the 22nd, while writing the report.
+
+**Verified fix, not yet applied:** `arch` 8.0.0 exists and ships its own copy of
+that helper instead of borrowing pandas' internal one (checked inside the
+downloaded package, not guessed), and it declares `pandas>=1.4.0` with no upper
+limit. Upgrading `arch` is a one-line change and leaves pandas alone. The
+alternative — holding pandas below version 3 — also works but steps a core
+library backwards to avoid fixing a small one.
+
+**Decision deferred by the team on 2026-08-18.** `rliable_aggregate` is therefore
+**not written**, rather than written and untested: we do not ship code we have
+not seen run. Everything else in the task is complete, including
+`probability_of_improvement`, which needs no external library. `iqm_by_strategy`
+already produces interquartile means with bootstrap intervals per maze, so the
+per-maze plots are unaffected; only the single cross-maze aggregate is waiting.

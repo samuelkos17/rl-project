@@ -48,7 +48,7 @@ correlation, that test fails. Do not delete it.**
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_stats.py`:
 
@@ -164,13 +164,13 @@ def test_rank_stability_is_negative_when_the_order_reverses():
     assert out[out["env_id"] == "DoorKey-8"]["tau"].iloc[0] < 0
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_stats.py -v
 ```
 
-- [ ] **Step 3: Write `src/rlx/analysis/stats.py`**
+- [x] **Step 3: Write `src/rlx/analysis/stats.py`**
 
 ```python
 """Statistical analysis.
@@ -317,7 +317,7 @@ def rank_stability(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 ```bash
 pytest tests/test_stats.py -v
@@ -326,7 +326,7 @@ pytest tests/test_stats.py -v
 Expected: 11 passed. **`test_pooling_and_within_instance_disagree` passing is the
 single most important assertion in this workstream.**
 
-- [ ] **Step 5: Run the whole pipeline on synthetic data**
+- [x] **Step 5: Run the whole pipeline on synthetic data**
 
 The synthetic generator baked in a known effect — count-based explores most,
 epsilon-greedy least, and more early coverage means better final return. Your
@@ -364,7 +364,7 @@ not against real results on the 22nd.
 merged yet, test the correlation functions with the hand-built frames above and
 run this end-to-end check once it lands.
 
-- [ ] **Step 6: Add the rliable aggregate comparison**
+- [ ] **Step 6: Add the rliable aggregate comparison** — PARTIAL, 2026-08-18. `probability_of_improvement` is done and tested (needs no library). `rliable_aggregate` is NOT written: `rliable` does not import (arch 7.2.0 vs pandas 3.0.5). Team deferred the dependency decision; see `docs/decision_log.md`, "The statistics trap we nearly walked into, and one we walked into".
 
 The `iqm_by_strategy` above is a hand-rolled IQM with a bootstrap CI — fine for
 per-instance bars, and only ~10 lines. But the proposal commits to `rliable`, and
@@ -449,7 +449,7 @@ time.** Read the installed package (`python -c "from rliable import library; hel
 fix the call to match, and write a `docs/decision_log.md` entry recording the
 real signature. This is Rule 1.
 
-- [ ] **Step 7: Log the change**
+- [x] **Step 7: Log the change**
 
 This is the most important entry in the whole log. Append to
 `docs/decision_log.md`:
