@@ -108,6 +108,31 @@ often than it evaluates, most rows carry an empty `eval_return_mean`.
 the tail, so it is correct either way — but if you intend to log at a different
 cadence than you evaluate, say so, because it changes how `metrics.csv` looks.
 
+**For Samuel — `configs/pilot.yaml` cannot measure the project's main predictor.**
+
+With `total_steps: 20000` and the default `snapshot_every: 10000`, `train.py`
+writes snapshots at steps **10,000 and 20,000** (there is none at step 0). The
+early-coverage window is `0.2 * 20000 = 4000` steps wide, so **zero snapshots
+land inside it**.
+
+`early_auc` used to return `coverage[0]` in that case — the coverage at step
+10,000, which is 2.5x outside the window, handed back as a normal-looking float.
+As of 2026-08-18 it **raises ValueError** instead, so the pilot now fails loudly
+rather than printing a fake number. Details in `docs/decision_log.md`, entry
+"The pilot could not measure early coverage".
+
+One of these has to happen before the 20th:
+- **`snapshot_every: 1000` in `configs/pilot.yaml`** — 4 points in the window
+  (1000/2000/3000/4000). 20 snapshots per run instead of 2, ~1 KB each, so the
+  cost is nil. **Recommended:** it makes the pilot actually exercise `early_auc`,
+  which is what a smoke test is for.
+- Or skip `early_auc` when smoke-testing analysis on `results_pilot/`. Then the
+  first time that code path runs for real is on the 260-run sweep.
+
+**Real runs are unaffected:** 400,000 steps at `snapshot_every: 10000` puts **8**
+snapshots in the 80,000-step window — which is exactly what the `snapshot_every`
+comment in `config.py` was sized for.
+
 **For Samuel — a test of yours failed once and did not reproduce.**
 `tests/test_agent.py::test_double_dqn_target_differs_from_vanilla_max` failed on
 2026-08-18 at **line 82**, `assert not np.allclose(double, vanilla)` — the
