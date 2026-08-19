@@ -2050,3 +2050,64 @@ of the figure. Whether this figure actually separates the strategies can only be
 judged on the real runs — and if it does not, the honest fix is to draw an
 earlier snapshot rather than a later one, not to adjust the picture.
 
+---
+
+## 2026-08-19 — The three of us agreed the knob values, and they are now fixed
+
+**Status:** Active. **These numbers are settled before any experiment has run.**
+
+**What changed:** Three numbers in `src/rlx/config.py`:
+
+| knob | was | now | why |
+|---|---|---|---|
+| `tau_start` | 1.0 | **0.01** | 300x the action-score differences it is meant to soften |
+| `tau_end` | 0.05 | **0.001** | 15x those differences, so Boltzmann never became decisive |
+| `count_beta` | 0.05 | **0.01** | novelty bonus was worth up to 14x solving the maze |
+
+Left alone deliberately: the epsilon-greedy settings (its knob is a probability,
+so the size of the scores cannot affect it), `tau_decay_frac` (the *shape* of the
+schedule was never the problem, only where it started and ended), and
+`noisy_sigma0` (measured on 2026-08-19 and found to be fine, because it corrects
+itself as the network learns).
+
+**What it does, measured with the real code before and after:**
+
+| | before | after |
+|---|---|---|
+| Boltzmann picks its favourite action, at the start | 14.3% | 28.4% |
+| ...a quarter of the way through | 14.4% | 39.1% |
+| ...at the end | 15.1% | **93.4%** |
+| Novelty bonus collected in one early episode | 11.42 | **2.28** |
+
+For reference, picking completely at random gives 14.3%, and epsilon-greedy ends
+at 95.7%. The "before" column is the whole problem in one line: Boltzmann was
+random at the start, random in the middle, and random at the end.
+
+**Why this is allowed, since we have a rule against tuning strategies to win.**
+The rule we applied is *"any knob measured in reward-units gets set against the
+actual reward scale of the environment"*. It was written down, applied to all four
+strategies at once, and settled **before the sweep**, so no number here was chosen
+by looking at who won. Epsilon-greedy needed nothing because its knob has no
+units. We did not try several values and keep the best — we solved for the
+endpoints from the measured numbers.
+
+**These values are now frozen.** Changing any of them after the sweep would mean
+picking our result after seeing it. If they turn out to be wrong, that is a
+finding for the report, not an edit.
+
+### A test had to change, and it is worth explaining why
+
+`test_better_actions_are_sampled_more_often_than_worse_ones` started failing. It
+was not a real breakage. The made-up action scores our tests use span 0.85, while
+a real network produces differences around 0.003 — roughly 250 times smaller. At
+the new temperature the maths saturates on those made-up numbers and every draw
+picks the same action, so the property became untestable on them rather than
+untrue. We pinned the temperature inside that test, exactly as the two tests
+beside it already do, so it no longer depends on the config.
+
+**We also added the test that would have caught this bug in the first place.**
+Nothing in our suite noticed that Boltzmann was behaving randomly for an entire
+run. There is now a test using the *measured* score differences that fails if the
+schedule does not start meaningfully above random and finish meaningfully
+decisive. Checked both ways: it fails on the old values (finishing at 18.2%) and
+passes on the new ones (97.3%).

@@ -303,7 +303,21 @@ Treat this as a sanity check, **not** as the reason: 3 seeds with a 0.955/0.000/
 0.764 spread cannot decide a hyperparameter. We decide on the pre-registered scale
 argument, which points the same way.
 
-**TWO decisions needed before the sweep, not one:**
+**BOTH DECISIONS ARE SETTLED — agreed by all three on 2026-08-19 and applied to
+`config.py`. `tau_start` 1.0 -> 0.01, `tau_end` 0.05 -> 0.001, `count_beta` 0.05
+-> 0.01.** Boltzmann now goes from 28% to 93% on picking its own favourite action
+(it was 14.3% to 15.1%, against 14.3% for a coin flip); the novelty bonus over an
+early episode drops from 11.42 to 2.28 against a maze reward of ~0.9.
+`noisy_sigma0` stays 0.5, `tau_decay_frac` stays 0.4, epsilon-greedy untouched.
+
+**These values are frozen. Changing any of them after the sweep means choosing our
+own result.** Full before/after in `docs/decision_log.md`, "The three of us agreed
+the knob values". A regression test now fails if the schedule ever goes back to
+being effectively random.
+
+The original discussion follows, kept for the record:
+
+**~~TWO decisions needed before the sweep, not one:~~** (both now done)
 
 1. **`count_beta`: 0.05 -> 0.01.**
 2. **Boltzmann's temperature schedule.** Boltzmann scored 0.064 against
