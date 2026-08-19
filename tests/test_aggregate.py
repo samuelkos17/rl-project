@@ -10,6 +10,13 @@ import pytest
 
 from rlx.config import RunConfig
 from rlx.analysis.aggregate import final_return, load_all, load_run, to_dataframe
+from rlx.envs import ENV_IDS, difficulty_index
+from rlx.exploration import STRATEGIES
+
+#: The fixture covers the real matrix: every instance x every strategy x 5 seeds.
+#: Derived, not hard-coded, so extending FIXTURE_ENV_IDS cannot leave a stale
+#: number behind in three separate tests.
+EXPECTED_RUNS = len(ENV_IDS) * len(STRATEGIES) * 5
 
 #: Resolved from this file, not from the working directory, so the suite passes
 #: no matter where pytest was launched from.
@@ -30,7 +37,7 @@ def runs(generated):
 
 
 def test_all_synthetic_runs_load(runs):
-    assert len(runs) == 120
+    assert len(runs) == EXPECTED_RUNS
 
 
 def test_identity_is_parsed_from_the_directory_path(runs):
@@ -109,10 +116,12 @@ def test_metrics_csv_without_a_header_does_not_crash(tmp_path):
 def test_grids_match_the_real_minigrid_dimensions(runs):
     """Task 3 intersects counts with a (W, H) reachability mask from grid_info,
     so a fixture at the wrong shape could not be developed against."""
-    expected = {"Empty-5": 5, "Empty-8": 8, "DoorKey-5": 5, "DoorKey-8": 8,
-                "MultiRoom-N2": 25, "MultiRoom-N4": 25}
+    # Stated independently of grid_info, which is what the fixture itself uses --
+    # deriving the expectation from grid_info would make this test tautological.
+    # Empty-N and DoorKey-N are N x N; every MultiRoom grid is 25 x 25 regardless
+    # of room count (verified 2026-08-17, see the note in src/rlx/envs.py).
     for r in runs:
-        size = expected[r.env_id]
+        size = 25 if r.env_id.startswith("MultiRoom") else difficulty_index(r.env_id)
         assert r.counts.shape[1:] == (size, size, 4), r.env_id
 
 
@@ -136,7 +145,7 @@ def test_no_effect_control_is_loadable_and_not_degenerate(tmp_path):
     subprocess.run([sys.executable, str(GENERATOR), "--out", str(tmp_path), "--no-effect"],
                    check=True)
     df = to_dataframe(load_all(tmp_path))
-    assert len(df) == 120
+    assert len(df) == EXPECTED_RUNS
     assert (df.groupby("env_id")["final_return"].std() > 0.01).all()
 
 

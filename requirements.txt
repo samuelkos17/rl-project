@@ -8,10 +8,19 @@ torch>=2.0
 gymnasium>=0.29
 minigrid>=2.3
 numpy>=1.24
-pandas>=2.0
+pandas>=2.0,<3
 scipy>=1.10
 matplotlib>=3.7
 rliable>=1.0.8
+# The two pins below belong together -- rliable does not work without both.
+# Verified 2026-08-19, see docs/decision_log.md "rliable pins us to pandas 2":
+#   * rliable 1.2.0 (newest release) calls arch's IIDBootstrap with the keyword
+#     `random_state=`. arch 8.0.0 renamed that parameter to `seed`, so under
+#     arch >= 8 every rliable bootstrap raises TypeError.  -> arch < 8
+#   * arch 7.2.0 calls a pandas internal (`deprecate_kwarg`) the old way, and
+#     pandas 3 changed it, so arch 7.2.0 will not import.   -> pandas < 3
+# Dropping either pin brings the breakage straight back.
+arch>=7.2,<8
 pyyaml>=6.0
 pytest>=7.4
 tabulate>=0.9

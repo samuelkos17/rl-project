@@ -4,7 +4,7 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-18**, by Daniel.
+Last updated: **2026-08-19**, by Daniel.
 
 
 ---
@@ -15,7 +15,7 @@ Last updated: **2026-08-18**, by Daniel.
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics (except rliable, blocked) | — | 5 figures |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics (**complete**, rliable included) | — | 5 figures |
 
 
 ## What is available on `main` right now
@@ -43,17 +43,28 @@ Everything below is merged and safe to import.
 | `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
 | `raw_coverage`, `task_relevant_coverage`, `task_relevant_mask`, `early_auc` | `rlx.analysis.coverage` | Daniel |
-| `build_analysis_table`, `within_instance_correlation`, `aggregate_correlation`, `iqm_by_strategy`, `rank_stability`, `probability_of_improvement` | `rlx.analysis.stats` | Daniel (figures), report |
+| `build_analysis_table`, `within_instance_correlation`, `aggregate_correlation`, `iqm_by_strategy`, `rank_stability`, `probability_of_improvement`, `rliable_aggregate` | `rlx.analysis.stats` | Daniel (figures), report |
 | `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |
 
 Settled by Daniel's task 2:
 - Analysis can be developed with **no real experiments**: the synthetic fixture
   writes the frozen §5 format (`steps` int64, `counts` int32 `(T, W, H, 4)`).
-- The fixture ships **two** datasets: the default has the hypothesis baked in
-  (within-instance Spearman **+0.49 to +0.94**, rising with difficulty, all
-  p < 0.03), `--no-effect` has none (**−0.22 to +0.19**, all p > 0.34). Task 4
-  must pass **both**. Re-measured 2026-08-18 after the reachability fix below;
-  the ranges before it were 0.58–0.93 and −0.22 to +0.15.
+- The fixture ships **two** datasets: the default has the hypothesis baked in,
+  `--no-effect` has none. Task 4 must pass **both**. Re-measured **2026-08-19**
+  after the extension to all 13 instances (`early_auc_raw`):
+
+  | | effect dataset | `--no-effect` control |
+  |---|---|---|
+  | within-instance Spearman | **+0.13 to +0.95** | **−0.28 to +0.28** |
+  | p-value range | 0.0000 to 0.5845 | 0.2309 to 0.7837 |
+  | mean rho, 95% CI | **+0.696** [+0.544, +0.836] | **−0.003** [−0.102, +0.095] |
+  | `trend_with_difficulty` | **+0.900** | **+0.167** |
+  | `confirms_h1` | `True` | `False` |
+
+  Earlier ranges, for reference: 6-instance fixture 2026-08-18 was +0.49..+0.94
+  and −0.22..+0.19; before the reachability fix, 0.58..0.93 and −0.22..+0.15.
+  **Individual easy instances are no longer all significant** (Empty-5 is now
+  rho +0.13, p 0.58) — that is deliberate, see the difficulty-trend note below.
 - **Task 4 requirement:** an instance where every run scores the same has an
   undefined within-instance correlation. Report those as "no variance, excluded",
   never as a silent `NaN`. This is a plausible real outcome for `DoorKey-10` and
@@ -110,45 +121,86 @@ often than it evaluates, most rows carry an empty `eval_return_mean`.
 the tail, so it is correct either way — but if you intend to log at a different
 cadence than you evaluate, say so, because it changes how `metrics.csv` looks.
 
-**For BOTH of you — `rliable` does not import in our environment. Check yours.**
+**For BOTH of you — RESOLVED 2026-08-19, but you must re-install.**
 
+`rliable` did not import (pandas 3.0.5 vs arch 7.2.0). It works now.
+
+```bash
+pip install -r requirements.txt
 ```
-python -c "from rliable import library"
+
+**Do this before your next pull, or `rlx.analysis.stats.rliable_aggregate` will
+raise on your machine.** Verify with:
+
+```bash
+python -c "from rliable import library; print('ok')"
 ```
 
-If that raises `TypeError: deprecate_kwarg() missing 1 required positional
-argument`, you have the same problem. Cause: `requirements.txt` allows any
-`pandas>=2.0`, pip installed **pandas 3.0.5**, pandas 3 changed an internal
-helper, and `arch` 7.2.0 (which `rliable` imports for its stratified bootstrap)
-still calls it the old way.
+**The fix is NOT the one this file recommended yesterday.** `arch>=8.0` does not
+work: arch 8.0.0 renamed `IIDBootstrap`'s `random_state` parameter to `seed`, and
+`rliable` 1.2.0 (the newest release, no update pending) still passes
+`random_state=`, so every bootstrap raises `TypeError`. Yesterday's note had only
+verified the *import*, never a *call*.
 
-This matters because the proposal commits to `rliable` for the aggregate
-strategy comparison and the professor approved that choice. No test imported it
-until Daniel's task 4, which is why it stayed hidden.
+What actually works, and what `requirements.txt` now pins — **both together, they
+do not work apart**:
 
-**Verified fix, NOT yet applied — needs a team decision:**
-- `arch>=8.0` (8.0.0 vendors its own copy of the helper — checked in the package
-  itself, not guessed — and allows `pandas>=1.4.0` with no upper bound).
-  **Recommended:** upgrades one leaf dependency, pandas stays current.
-- or pin `pandas>=2.0,<3`. Also works, but steps a core library back.
+| pin | why |
+|---|---|
+| `pandas>=2.0,<3` | arch 7.2.0 calls pandas' internal `deprecate_kwarg` the old way; pandas 3 changed it, so arch will not import |
+| `arch>=7.2,<8` | arch 8 renamed the parameter rliable passes |
 
-Our own code touches only `pd.DataFrame`, `pd.read_csv` and `pd.errors`, so it is
-unaffected either way. Whoever decides: change `requirements.txt`, add a
-`docs/decision_log.md` note (CLAUDE.md §3), and tell the other two to re-run
-`pip install -r requirements.txt`.
+Windows wheel confirmed present: `arch-8.0.0-cp311-cp311-win_amd64.whl` exists,
+and 7.2.0 likewise ships `cp311-win_amd64`. Nothing here needs a compiler.
 
-Until then `rlx.analysis.stats.rliable_aggregate` **does not exist**. It was left
-unwritten rather than written untested. `iqm_by_strategy` covers the per-instance
-bars without rliable, so only the single cross-instance aggregate is missing.
+`rliable_aggregate(df, seed=0)` is written, tested and available.
+`iqm_by_strategy` (hand-rolled) is unchanged and still used for the per-instance
+bars; `rliable_aggregate` is the single cross-instance number the proposal
+promised.
 
-**For Daniel (task 5) — the fixture cannot check the difficulty trend.**
-`aggregate_correlation` reports `trend_with_difficulty`, and on the synthetic
-fixture it is `NaN` — correctly. The fixture has only 2 instances per family
-(below the 3 required for a meaningful Spearman) **and** its generator sets the
-effect strength per *family*, so Empty-5 and Empty-8 have identical strength by
-construction. The logic has unit-test coverage
-(`test_difficulty_trend_does_not_mix_families`), but no end-to-end check. Extending
-`FIXTURE_ENV_IDS` to all 13 instances with a within-family gradient would fix that.
+**One thing to know if you ever call rliable directly:** its `random_state=`
+argument is ignored. `StratifiedBootstrap.update_indices` calls `np.random.choice`,
+i.e. the global numpy RNG. `rliable_aggregate` seeds the global RNG and restores
+the previous state in a `finally` block — the one place in the codebase that
+touches global randomness (`CLAUDE.md` §11). Do not "clean this up" into an
+explicitly passed generator; it does not work.
+
+**Difficulty trend — FIXED 2026-08-19. The fixture now covers all 13 instances.**
+
+`FIXTURE_ENV_IDS` was a 6-instance subset (two per family), which is below the
+three a Spearman needs, so `aggregate_correlation`'s `trend_with_difficulty` came
+back `NaN` and hypothesis H2 had no end-to-end test. It is now `list(ENV_IDS)` —
+**260 synthetic runs, 8.6 MB, ~3 s to generate** (was 120 runs, 3.5 MB, 1.3 s).
+
+**Regenerate yours** — anything older than 2026-08-19 has the old shape and will
+fail `tests/test_aggregate.py`:
+
+```bash
+python scripts/make_synthetic_results.py --out results_synthetic
+```
+
+**Extending the instance list was not sufficient on its own**, and this is worth
+knowing before anyone touches the fixture again. The baked-in effect strength was
+tied to *absolute* difficulty, whose span inside one family is only 0.30. Every
+MultiRoom instance therefore sat at rho 0.90–0.97 — against a hard ceiling of
+1.0, with no headroom for a rising effect to show. First measurement:
+**trend +0.13 on the effect dataset against +0.17 on the `--no-effect` control**,
+i.e. signal below noise, a useless test.
+
+The effect is now tied to an instance's position **within its family**
+(`_family_position`), which is exactly what `trend_per_family` measures. After
+the change: **+0.900 against +0.167**, a factor of 5.
+
+Consequence to expect: the easy end of each family now correlates weakly on
+purpose (Empty-5 is rho +0.13, p 0.58). The aggregate still confirms H1
+(`confirms_h1=True`, CI excludes zero), but **the fixture no longer has every
+instance individually significant** — do not write a test that assumes it does.
+
+**Three tests in `tests/test_aggregate.py` had the old size baked in** and were
+updated: the two `len(...) == 120` assertions now derive `EXPECTED_RUNS` from
+`len(ENV_IDS) * len(STRATEGIES) * 5`, and
+`test_grids_match_the_real_minigrid_dimensions` no longer carries a hand-written
+6-entry dict.
 
 **For Samuel — `configs/pilot.yaml` cannot measure the project's main predictor.**
 

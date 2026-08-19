@@ -175,3 +175,58 @@ def probability_of_improvement(df: pd.DataFrame, a: str, b: str) -> float:
     if len(x) == 0 or len(y) == 0:
         return float("nan")
     return float((x[:, None] > y[None, :]).mean() + 0.5 * (x[:, None] == y[None, :]).mean())
+
+
+def rliable_aggregate(df: pd.DataFrame, seed: int = 0) -> dict:
+    """Aggregate IQM across every instance, with rliable's stratified bootstrap.
+
+    rliable expects {strategy: array of shape (n_seeds, n_instances)}, where one
+    instance is one "task". MiniGrid returns are already in [0, 1], so no
+    normalisation is needed.
+    """
+    # Imported inside the function on purpose: rliable pulls in arch and
+    # statsmodels, and every other function in this file must keep working on a
+    # machine where that import is broken.
+    from rliable import library as rly
+    from rliable import metrics
+
+    env_ids = sorted(df["env_id"].unique())
+    scores = {}
+    for strategy, group in df.groupby("strategy", sort=True):
+        pivot = (group.pivot_table(index="seed", columns="env_id",
+                                   values="final_return")
+                      .reindex(columns=env_ids))
+        gaps = pivot.isna().to_numpy()
+        if gaps.any():
+            # rliable would propagate the hole into a NaN aggregate that still
+            # looks like a number. Refuse, the way early_auc does.
+            where = sorted({f"{pivot.columns[c]}/seed{pivot.index[r]}"
+                            for r, c in zip(*np.where(gaps))})
+            raise ValueError(
+                f"strategy {strategy!r} is missing {len(where)} run(s) "
+                f"({', '.join(where)}); every strategy needs the same seeds on "
+                f"every instance. Re-run them or drop the instance."
+            )
+        scores[strategy] = pivot.to_numpy()
+
+    # rliable's `random_state` argument does NOT work: StratifiedBootstrap
+    # overrides update_indices() and draws from the GLOBAL numpy RNG
+    # (np.random.choice), ignoring the generator it was handed. Seeding the
+    # global RNG is therefore the only way to get a reproducible interval.
+    # This is the one place in the codebase that touches global randomness
+    # (CLAUDE.md section 11); the state is restored so nothing leaks out.
+    state = np.random.get_state()
+    try:
+        np.random.seed(seed)
+        point, interval = rly.get_interval_estimates(
+            scores, lambda x: np.array([metrics.aggregate_iqm(x)]), reps=2_000)
+    finally:
+        np.random.set_state(state)
+    return {
+        strategy: {
+            "iqm": float(point[strategy][0]),
+            "ci_low": float(interval[strategy][0][0]),
+            "ci_high": float(interval[strategy][1][0]),
+        }
+        for strategy in scores
+    }

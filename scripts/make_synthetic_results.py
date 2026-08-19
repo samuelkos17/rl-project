@@ -13,12 +13,13 @@ import numpy as np
 import pandas as pd
 
 from rlx.config import RunConfig
-from rlx.envs import grid_info, reachable_mask
+from rlx.envs import ENV_IDS, difficulty_index, grid_info, reachable_mask
 
-#: A 6-instance subset of the real 13. Not rlx.envs.ENV_IDS -- the fixture only
-#: needs enough instances to cover all three families at two difficulties each.
-FIXTURE_ENV_IDS = ["Empty-5", "Empty-8", "DoorKey-5", "DoorKey-8",
-                   "MultiRoom-N2", "MultiRoom-N4"]
+#: The full real matrix. It used to be a 6-instance subset (two per family), but
+#: two points per family is below the three a Spearman needs, so
+#: aggregate_correlation's trend_with_difficulty came out NaN and the
+#: difficulty trend -- the project's second hypothesis -- had no end-to-end test.
+FIXTURE_ENV_IDS = list(ENV_IDS)
 STRATEGIES = ["epsilon_greedy", "boltzmann", "count_based", "noisy"]
 SEEDS = [0, 1, 2, 3, 4]
 
@@ -34,8 +35,35 @@ SNAPSHOT_EVERY = _DEFAULTS.snapshot_every
 EXPLORE_RATE = {"epsilon_greedy": 1.0, "boltzmann": 1.15, "count_based": 1.4, "noisy": 1.25}
 
 
+#: Where each family starts on the 0-1 difficulty scale. The 0.30 span added
+#: inside a family keeps families from overlapping: Empty 0.15-0.45,
+#: DoorKey 0.50-0.80, MultiRoom 0.85-1.15.
+_FAMILY_BASE = {"Empty": 0.15, "DoorKey": 0.50, "MultiRoom": 0.85}
+
+#: Easiest and hardest difficulty_index per family, derived from ENV_IDS rather
+#: than restated, so the fixture cannot drift from the real matrix.
+_FAMILY_SPAN = {
+    family: (min(difficulty_index(e) for e in ENV_IDS if e.startswith(family)),
+             max(difficulty_index(e) for e in ENV_IDS if e.startswith(family)))
+    for family in _FAMILY_BASE
+}
+
+
+def _family_position(env_id: str) -> float:
+    """0.0 for the easiest instance of a family, 1.0 for the hardest."""
+    family = env_id.split("-")[0]
+    low, high = _FAMILY_SPAN[family]
+    return (difficulty_index(env_id) - low) / (high - low)
+
+
 def _difficulty(env_id: str) -> float:
-    return {"Empty": 0.2, "DoorKey": 0.6, "MultiRoom": 1.0}[env_id.split("-")[0]]
+    """0.15 (easiest Empty) to 1.15 (hardest MultiRoom).
+
+    Varies WITHIN a family, not only between families. The earlier version
+    returned one value per family, so every Empty instance was equally hard by
+    construction and there was no within-family gradient at all.
+    """
+    return _FAMILY_BASE[env_id.split("-")[0]] + 0.30 * _family_position(env_id)
 
 
 def _early_auc(rate: float, difficulty: float) -> float:
@@ -77,7 +105,11 @@ def make_run(out_root: Path, env_id: str, strategy: str, seed: int, effect: bool
     # not a difference: early_auc shrinks as mazes get harder, so a fixed reference
     # would penalise hard instances twice and clip every strategy to the same floor.
     advantage = early_auc / _early_auc(1.0, difficulty) - 1.0
-    gain = (0.5 + difficulty) if effect else 0.0
+    # Effect strength rises with position INSIDE the family, because that is what
+    # aggregate_correlation's trend_per_family measures. Tying it to absolute
+    # difficulty instead spans only 0.30 within a family, which left every
+    # MultiRoom instance saturated at rho ~= 0.95 with no headroom to rise.
+    gain = (0.30 + 1.40 * _family_position(env_id)) if effect else 0.0
     ceiling = np.clip(0.75 - 0.40 * difficulty + gain * advantage + rng.normal(0, 0.10),
                       0.0, 0.95)
     returns = ceiling / (1 + np.exp(-(eval_steps - TOTAL_STEPS * 0.4) / 40_000))
