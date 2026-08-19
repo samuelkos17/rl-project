@@ -107,3 +107,29 @@ def test_no_partial_directory_survives_finalize(cfg):
     log.snapshot(100)
     log.finalize({"completed": True})
     assert not list(cfg.run_dir.parent.glob("*.partial"))
+
+
+def test_finalize_refuses_to_overwrite_a_finished_run(cfg):
+    """CLAUDE.md section 5: a directory that exists is a directory that finished,
+    and the sweep runner skips those. finalize used to rmtree the old one, so a
+    direct `python -m rlx.train` on an already-completed run destroyed a result
+    that may have taken ten minutes to produce -- without a word."""
+    RunLogger(cfg, width=5, height=5).finalize({"completed": True})
+    assert cfg.run_dir.exists()
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        RunLogger(cfg, width=5, height=5).finalize({"completed": True})
+
+
+def test_a_refused_finalize_leaves_the_finished_run_untouched(cfg):
+    first = RunLogger(cfg, width=5, height=5)
+    first.record_visit(1, 1, 0)
+    first.log_step(0, eval_return_mean=0.75)
+    first.finalize({"completed": True})
+    before = (cfg.run_dir / "metrics.csv").read_text()
+
+    with pytest.raises(FileExistsError):
+        RunLogger(cfg, width=5, height=5).finalize({"completed": True})
+
+    assert (cfg.run_dir / "metrics.csv").read_text() == before
+    assert not cfg.run_dir.with_name(cfg.run_dir.name + ".partial").exists()

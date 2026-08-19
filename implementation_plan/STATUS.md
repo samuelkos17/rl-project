@@ -4,7 +4,7 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-19**, by Daniel.
+Last updated: **2026-08-19** (second update, after the tasks 1-4 review), by Daniel.
 
 
 ---
@@ -43,7 +43,7 @@ Everything below is merged and safe to import.
 | `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
 | `raw_coverage`, `task_relevant_coverage`, `task_relevant_mask`, `early_auc` | `rlx.analysis.coverage` | Daniel |
-| `build_analysis_table`, `within_instance_correlation`, `aggregate_correlation`, `iqm_by_strategy`, `rank_stability`, `probability_of_improvement`, `rliable_aggregate` | `rlx.analysis.stats` | Daniel (figures), report |
+| `build_analysis_table`, `within_instance_correlation`, `aggregate_correlation`, `compare_coverage_predictors`, `iqm_by_strategy`, `rank_stability`, `probability_of_improvement`, `rliable_aggregate`, `performance_profile` | `rlx.analysis.stats` | Daniel (figures), report |
 | `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |
 
 Settled by Daniel's task 2:
@@ -59,7 +59,13 @@ Settled by Daniel's task 2:
   | p-value range | 0.0000 to 0.5845 | 0.2309 to 0.7837 |
   | mean rho, 95% CI | **+0.696** [+0.544, +0.836] | **−0.003** [−0.102, +0.095] |
   | `trend_with_difficulty` | **+0.900** | **+0.167** |
+  | mean per-instance CI width | **0.450** | **0.935** |
+  | `ci_excludes_zero` | `True` | `False` |
   | `confirms_h1` | `True` | `False` |
+  | `confirms_h2` | `False` (by construction) | `False` |
+
+  Re-measured after the 2026-08-19 review; identical to before it, because the
+  `early_auc` fix is a monotone rescaling and Spearman is rank-based.
 
   Earlier ranges, for reference: 6-instance fixture 2026-08-18 was +0.49..+0.94
   and −0.22..+0.19; before the reachability fix, 0.58..0.93 and −0.22..+0.15.
@@ -395,3 +401,57 @@ without asking.
 **This file is a courtesy, not a source of truth.** `main` is the source of
 truth. If this file and the code disagree, the code is right and this file is
 stale — fix it.
+
+---
+
+## Tasks 1-4 reviewed against every requirement, 2026-08-19 — nine fixes
+
+Full read-back of `context/proposal_response.md`, the spec, and `CLAUDE.md`
+against the code. Nine findings, all fixed on `analysis/statistics`. Suite went
+from 183 to **202 passed, 1 xfailed**. Details in `docs/decision_log.md`,
+"A full review of tasks 1-4 found nine things, and we fixed all nine".
+
+**For Samuel — one behaviour change in a file your `train.py` calls.**
+
+`RunLogger.finalize` now raises `FileExistsError` when the run directory already
+exists. It used to `rmtree` it. The sweep runner skips existing directories, so
+nothing in a normal sweep changes — but **a direct `python -m rlx.train` on an
+already-finished run now fails instead of overwriting it**, which is the
+`CLAUDE.md` §5 contract ("a directory that exists is a directory that finished").
+If any of your tooling relies on re-running over a finished directory, it needs
+to delete the directory first, deliberately.
+
+**API changes in `rlx.analysis.stats`** — relevant to figures (task 5) and the
+report scaffold (task 6):
+
+| change | effect |
+|---|---|
+| `within_instance_correlation(df, col, seed=0)` | new `seed` argument; two new columns `rho_ci_low`, `rho_ci_high` |
+| `aggregate_correlation` | new key `ci_excludes_zero`; **`confirms_h1` now requires the difficulty trend to be positive too**, per spec §1 |
+| `aggregate_correlation` degenerate branch | now returns the same keys as the normal branch — it used to omit `confirms_h1` and crash `report.py` |
+| `rank_stability` | ranks by **IQM**, not mean (spec §7.4). **Tau values differ from before on 7 of 13 instances.** |
+| `early_auc` | normalises by the window, not the snapshot span. **Values are ~12% lower than before.** Rank-invariant, so no correlation changes. |
+| `build_analysis_table` | raises once naming **every** unusable run, instead of aborting at the first |
+| new: `compare_coverage_predictors(df, seed=0)` | the H2 test — larger correlation **and** non-overlapping CIs |
+| new: `performance_profile(df, taus=None, seed=0)` | spec §7.2, returns `taus`, `profiles`, `ci_low`, `ci_high` per strategy |
+
+**For task 5 (figures), three consequences:**
+
+- **fig5 was under-specified.** Spec §7.5 asks for "rliable IQM with CIs, **plus
+  performance profiles**"; the plan in `05-figures.md` only draws IQM bars. Use
+  `performance_profile` for the second panel.
+- **fig4 can now draw per-instance CIs.** `within_instance_correlation` returns
+  `rho_ci_low` / `rho_ci_high`, which is what distinguishes a solid per-maze
+  result from a coincidence.
+- **fig6 will look different** from anything rendered before 2026-08-19, because
+  the ranking is now IQM-based. That is the fix, not a regression.
+
+**Known limitation, deliberately not papered over.** The synthetic fixture cannot
+confirm H2: its effect is baked into raw coverage only, with no extra signal for
+task-relevant coverage, so `compare_coverage_predictors` correctly returns
+`confirms_h2=False` on it. The comparison has unit tests covering both outcomes
+(`test_h2_is_confirmed_...`, `test_h2_is_not_confirmed_...`), but the end-to-end
+"confirmed" path will first be exercised on real results. Fixing this would mean
+making raw and task-relevant coverage diverge in the generator — and on the Empty
+family they are identical by construction (ratio 1.00), so it cannot be done
+uniformly. Left as is.

@@ -46,7 +46,21 @@ class RunLogger:
         self._snapshots.append(self.counts.copy())
 
     def finalize(self, meta: dict) -> None:
-        """Write the result directory atomically: build .partial, then rename."""
+        """Write the result directory atomically: build .partial, then rename.
+
+        Refuses if the run directory already exists. By the CLAUDE.md section 5
+        contract a directory that exists is a run that finished, and the sweep
+        runner skips those -- so getting here means someone re-ran a completed
+        run by hand, and quietly deleting a ten-minute result is the one outcome
+        nobody wants. A leftover .partial is different: that is a crashed run,
+        and it is safe to discard.
+        """
+        if self.cfg.run_dir.exists():
+            raise FileExistsError(
+                f"{self.cfg.run_dir} already exists, so that run finished and "
+                f"would be overwritten. Delete it deliberately to redo the run."
+            )
+
         if self._partial.exists():
             shutil.rmtree(self._partial)
         self._partial.mkdir(parents=True)
@@ -61,6 +75,4 @@ class RunLogger:
                     else np.zeros((0, *self.counts.shape), dtype=np.int32)),
         )
 
-        if self.cfg.run_dir.exists():
-            shutil.rmtree(self.cfg.run_dir)
         self._partial.rename(self.cfg.run_dir)

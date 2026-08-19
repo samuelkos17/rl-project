@@ -1654,3 +1654,102 @@ about:
 ```bash
 python scripts/make_synthetic_results.py --out results_synthetic
 ```
+
+## 2026-08-19 — A full review of tasks 1-4 found nine things, and we fixed all nine
+
+**Status:** Active
+
+**What this was:** before building the figures, we read every requirement — the
+professor's feedback, the design spec, our own rules — back against the code that
+is supposed to satisfy them, and re-measured anything we were not sure about.
+Nine things came out of it. None of them made the code crash, which is exactly
+why a review was needed to find them.
+
+**Two of them would have put wrong numbers in the report.**
+
+**1. Rank stability was ranking strategies by their average, not by the robust
+average we said we would use.** With five runs per strategy, one collapsed run
+drags an average far enough to swap two strategies that are otherwise clearly
+apart — and our third question is precisely "does the winner change as mazes get
+harder". So a single unlucky run could have been reported as a rank change that
+never happened. Measured on the fake data: the two methods disagreed on **7 of
+the 13 mazes**. Now fixed to use the robust version (IQM — drop the best and
+worst quarter, average the middle), as the spec said all along.
+
+**2. Our main predictor was 12% too high.** "Early coverage" is meant to be the
+average coverage over the first fifth of training. The code was averaging over
+the *snapshots it happened to have* instead of over the *window it claims to
+summarise*. Since training takes its first snapshot at step 10,000 and the window
+runs from 0 to 80,000, the first eighth of the window was silently missing.
+
+Every test passed because every test used a made-up snapshot list that started at
+step 0 — which is the one case a real run never produces. That is the lesson
+worth keeping: **a test that only exercises a shape your production code never
+creates is not testing your production code.**
+
+**The good news, and we checked it rather than assuming:** the central result is
+untouched. Our main test ranks runs against each other, and this error scaled
+every run by the same factor, so the ranking — and therefore the correlation, the
+difficulty trend, everything we actually conclude — came out **bit-for-bit
+identical**. Only the printed number was wrong.
+
+**Four things the spec asked for were simply missing.**
+
+**3. Performance profiles.** The spec and the professor both wanted them: instead
+of one summary number per strategy, a curve showing what fraction of runs beat
+each possible score. Two strategies can have the same average and completely
+different shapes — one solves half the mazes brilliantly and fails the rest, the
+other is mediocre everywhere. The average hides that; the profile shows it.
+
+**4. A confidence interval for each individual maze.** We had one for the overall
+average but not for the per-maze numbers, so there was no way to tell a solid
+per-maze result from a coincidence. With 20 runs per maze that matters: on the
+fake data the intervals average **0.45 wide** where the effect is real and
+**0.94 wide** where it is not — the width alone separates signal from noise.
+
+**5. A real test of our second hypothesis.** We had promised to check whether
+"coverage of the states that matter" predicts better than "coverage of
+everything", and specifically that one only wins if the two confidence intervals
+do not overlap. Nothing computed that; the report would have printed two numbers
+side by side and left a human to eyeball it. Now there is a function that answers
+it, including the case the spec calls the interesting alternative: if they
+predict equally well, that is a genuine finding — exploring broadly matters,
+exploring cleverly does not.
+
+**6. Our "hypothesis confirmed" flag only checked half the hypothesis.** We wrote
+down in advance that the main hypothesis needs *two* things: a positive
+relationship whose confidence interval excludes zero, **and** a relationship that
+gets stronger on harder mazes. The flag only checked the first. It could have
+printed "confirmed" on data where the effect shrinks with difficulty — the
+opposite of what we predicted. Both halves are now required, and they are also
+reported separately so the report can say which one failed.
+
+**Three were traps waiting to spring.**
+
+**7.** If every maze had come out tied, the summary function returned a result
+missing the field the report generator reads — so the report would have crashed
+while being written, on the 22nd, instead of reporting "not confirmed".
+
+**8.** One unusable run used to abort the whole 260-run analysis at the first one
+it met, so you found out about the next one only after re-running. It now
+collects them all and names every one in a single message.
+
+**9. Finishing a run could destroy a finished run.** Our own rule says a result
+folder that exists is a run that completed, and the sweep runner skips those. But
+the writer deleted any folder in its way before renaming. Anyone re-running one
+run by hand — the obvious thing to do when checking something — would have
+silently destroyed a ten-minute result. It now refuses and says so.
+
+**What it means for the results:** no conclusion changes. The correlation, the
+difficulty trend and the hypothesis outcomes on our fake data are identical
+before and after. What changes is that the numbers printed in the report now mean
+what the report says they mean, four promised analyses exist, and three ways of
+losing work or crashing at the worst moment are closed.
+
+**One limitation we are recording rather than papering over:** the fake dataset
+cannot confirm the second hypothesis, because its effect is built into total
+coverage only, with nothing extra for task-relevant coverage. On it the
+comparison correctly returns "not confirmed". The comparison logic has its own
+tests covering both outcomes, but the end-to-end path will first meet a real
+"confirmed" case on the actual results. We chose to write this down rather than
+redesign the fake data to flatter us.

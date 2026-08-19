@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from rlx.analysis.stats import (
-    aggregate_correlation, iqm_by_strategy, rank_stability, within_instance_correlation,
+    aggregate_correlation, build_analysis_table, iqm_by_strategy, rank_stability,
+    within_instance_correlation,
 )
 
 
@@ -216,3 +218,229 @@ def test_rliable_aggregate_rejects_an_incomplete_matrix():
 
     with pytest.raises(ValueError, match="missing"):
         rliable_aggregate(_frame(rows))
+
+
+def test_rank_stability_ranks_by_iqm_not_by_mean():
+    """Spec 7.4 ranks strategies by IQM, which one unlucky seed cannot move.
+
+    Strategy 'a' wins on both instances on IQM (0.90 vs 0.80). On the harder
+    instance a single seed collapses to 0.0, which drags a's MEAN to 0.72 and
+    flips the order -- so a mean-based ranking reports tau = -1.0 ("the winner
+    changed") where nothing about the ranking actually changed.
+    """
+    rows = [["Empty-5", 5, "a", i, 0.90, 0.5] for i in range(5)]
+    rows += [["Empty-5", 5, "b", i, 0.80, 0.5] for i in range(5)]
+    rows += [["Empty-8", 8, "a", i, 0.0 if i == 0 else 0.90, 0.5] for i in range(5)]
+    rows += [["Empty-8", 8, "b", i, 0.80, 0.5] for i in range(5)]
+
+    tau = rank_stability(_frame(rows)).set_index("env_id")["tau"]
+    assert tau["Empty-5"] == 1.0
+    assert tau["Empty-8"] == 1.0
+
+
+def test_h1_is_not_confirmed_when_the_effect_shrinks_with_difficulty():
+    """Spec section 1 states TWO conditions for H1: a positive correlation whose
+    CI excludes zero, AND a correlation that grows on harder mazes. Here the
+    first holds and the second is exactly reversed, so H1 is not confirmed."""
+    rows = [{"env_id": f"Empty-{d}", "family": "Empty", "difficulty": d, "rho": r}
+            for d, r in ((5, 0.90), (8, 0.70), (16, 0.50))]
+    agg = aggregate_correlation(pd.DataFrame(rows))
+
+    assert agg["ci_excludes_zero"] is True
+    assert agg["trend_with_difficulty"] < 0
+    assert agg["confirms_h1"] is False
+
+
+def test_h1_is_confirmed_when_both_conditions_hold():
+    rows = [{"env_id": f"Empty-{d}", "family": "Empty", "difficulty": d, "rho": r}
+            for d, r in ((5, 0.50), (8, 0.70), (16, 0.90))]
+    agg = aggregate_correlation(pd.DataFrame(rows))
+    assert agg["ci_excludes_zero"] is True
+    assert agg["confirms_h1"] is True
+
+
+def test_an_unmeasurable_trend_does_not_confirm_h1():
+    """Two instances is below the three a Spearman needs, so the trend is NaN.
+    'We could not measure it' must not read as 'confirmed'."""
+    rows = [{"env_id": "Empty-5", "family": "Empty", "difficulty": 5, "rho": 0.8},
+            {"env_id": "Empty-8", "family": "Empty", "difficulty": 8, "rho": 0.9}]
+    agg = aggregate_correlation(pd.DataFrame(rows))
+    assert np.isnan(agg["trend_with_difficulty"])
+    assert agg["confirms_h1"] is False
+
+
+def test_aggregate_returns_the_same_keys_when_nothing_is_measurable():
+    """report.py reads agg['confirms_h1'] unconditionally. The degenerate branch
+    used to omit the key entirely, so a fully tied sweep raised KeyError while
+    writing the report instead of reporting 'not confirmed'."""
+    all_nan = pd.DataFrame({"env_id": ["a", "b"], "difficulty": [1, 2],
+                            "rho": [np.nan, np.nan]})
+    normal = pd.DataFrame({"env_id": ["a", "b", "c"], "family": ["E"] * 3,
+                           "difficulty": [1, 2, 3], "rho": [0.5, 0.6, 0.7]})
+    assert set(aggregate_correlation(all_nan)) == set(aggregate_correlation(normal))
+    assert aggregate_correlation(all_nan)["confirms_h1"] is False
+
+
+def test_each_instance_gets_a_bootstrap_interval_on_its_correlation():
+    """Spec 7.3 step 2: bootstrap over that instance's runs for a CI on its own
+    rho, not only on the mean across instances."""
+    rng = np.random.default_rng(0)
+    auc = np.linspace(0.1, 0.9, 20)
+    rows = [["DoorKey-8", 8, f"s{i}", i, float(a + rng.normal(0, 0.25)), float(a)]
+            for i, a in enumerate(auc)]
+    out = within_instance_correlation(_frame(rows), "early_auc_raw").iloc[0]
+
+    assert "rho_ci_low" in out and "rho_ci_high" in out
+    assert out["rho_ci_low"] < out["rho"] < out["rho_ci_high"]
+    assert -1.0 <= out["rho_ci_low"] and out["rho_ci_high"] <= 1.0
+
+
+def test_the_per_instance_interval_is_reproducible():
+    rng = np.random.default_rng(1)
+    rows = [["DoorKey-8", 8, f"s{i}", i, float(a + rng.normal(0, 0.3)), float(a)]
+            for i, a in enumerate(np.linspace(0.1, 0.9, 20))]
+    frame = _frame(rows)
+    first = within_instance_correlation(frame, "early_auc_raw", seed=0)
+    second = within_instance_correlation(frame, "early_auc_raw", seed=0)
+    assert first["rho_ci_low"].equals(second["rho_ci_low"])
+    assert first["rho_ci_high"].equals(second["rho_ci_high"])
+
+
+def test_an_instance_with_no_variance_has_no_interval_either():
+    """rho is NaN there, so an interval would be an invention."""
+    rows = [["MultiRoom-N6", 6, f"s{i}", i, 0.0, 0.1 + i * 0.01] for i in range(10)]
+    out = within_instance_correlation(_frame(rows), "early_auc_raw").iloc[0]
+    assert np.isnan(out["rho"])
+    assert np.isnan(out["rho_ci_low"]) and np.isnan(out["rho_ci_high"])
+
+
+def _two_predictor_frame(task_predicts: bool, raw_predicts: bool) -> pd.DataFrame:
+    """4 instances x 20 runs. Each predictor either tracks final_return or is
+    independent of it, so H2 can be constructed either way."""
+    rng = np.random.default_rng(0)
+    rows = []
+    for env_id, difficulty in (("DoorKey-5", 5), ("DoorKey-6", 6),
+                               ("DoorKey-7", 7), ("DoorKey-8", 8)):
+        signal = np.linspace(0.1, 0.9, 20)
+        ret = signal + rng.normal(0, 0.05, 20)
+        for i in range(20):
+            rows.append({
+                "env_id": env_id, "family": "DoorKey", "difficulty": difficulty,
+                "strategy": f"s{i % 4}", "seed": i // 4,
+                "final_return": float(ret[i]),
+                "early_auc_task": float(signal[i] if task_predicts else rng.random()),
+                "early_auc_raw": float(signal[i] if raw_predicts else rng.random()),
+            })
+    return pd.DataFrame(rows)
+
+
+def test_h2_is_confirmed_when_task_relevant_predicts_and_raw_does_not():
+    """Spec section 1: H2 needs a LARGER correlation AND non-overlapping CIs."""
+    from rlx.analysis.stats import compare_coverage_predictors
+
+    out = compare_coverage_predictors(_two_predictor_frame(task_predicts=True,
+                                                           raw_predicts=False))
+    assert out["task"]["mean_rho"] > out["raw"]["mean_rho"]
+    assert out["cis_overlap"] is False
+    assert out["confirms_h2"] is True
+    assert out["task_minus_raw"] > 0
+
+
+def test_h2_is_not_confirmed_when_both_predict_equally_well():
+    """The spec calls this the interesting alternative, not a failure: breadth of
+    exploration matters, directedness does not."""
+    from rlx.analysis.stats import compare_coverage_predictors
+
+    out = compare_coverage_predictors(_two_predictor_frame(task_predicts=True,
+                                                           raw_predicts=True))
+    assert out["cis_overlap"] is True
+    assert out["confirms_h2"] is False
+
+
+def _profile_frame() -> pd.DataFrame:
+    rows = []
+    for env in ("Empty-5", "DoorKey-5"):
+        for strat, base in (("a", 0.8), ("b", 0.4)):
+            for seed in range(5):
+                rows.append([env, 5, strat, seed, base + seed * 0.02, 0.5])
+    return _frame(rows)
+
+
+def test_performance_profile_covers_every_strategy_and_threshold():
+    """Spec 7.2: the fraction of runs exceeding each return threshold, which
+    shows the whole distribution instead of one summary number."""
+    from rlx.analysis.stats import performance_profile
+
+    out = performance_profile(_profile_frame())
+    assert set(out["profiles"]) == {"a", "b"}
+    for strategy in ("a", "b"):
+        assert len(out["profiles"][strategy]) == len(out["taus"])
+        assert len(out["ci_low"][strategy]) == len(out["taus"])
+        assert len(out["ci_high"][strategy]) == len(out["taus"])
+
+
+def test_performance_profile_never_rises_with_the_threshold():
+    """Fewer runs can clear a higher bar, never more."""
+    from rlx.analysis.stats import performance_profile
+
+    out = performance_profile(_profile_frame())
+    for strategy, curve in out["profiles"].items():
+        assert (np.diff(curve) <= 1e-9).all(), strategy
+        assert ((curve >= 0) & (curve <= 1)).all(), strategy
+
+
+def test_a_dominating_strategy_has_the_higher_profile_everywhere():
+    from rlx.analysis.stats import performance_profile
+
+    out = performance_profile(_profile_frame())
+    assert (out["profiles"]["a"] >= out["profiles"]["b"] - 1e-9).all()
+
+
+def test_performance_profile_is_reproducible():
+    """Same global-RNG problem as rliable_aggregate: without a pinned seed the
+    confidence band moves every time the report is regenerated."""
+    from rlx.analysis.stats import performance_profile
+
+    frame = _profile_frame()
+    first = performance_profile(frame, seed=0)
+    second = performance_profile(frame, seed=0)
+    for strategy in first["profiles"]:
+        assert np.array_equal(first["ci_low"][strategy], second["ci_low"][strategy])
+        assert np.array_equal(first["ci_high"][strategy], second["ci_high"][strategy])
+
+
+def _fake_run(seed: int, steps, total_steps: int = 100_000):
+    from rlx.analysis.aggregate import RunResult
+
+    counts = np.zeros((len(steps), 5, 5, 4), dtype=np.int32)
+    counts[:, 1, 1, 0] = 1
+    return RunResult(
+        env_id="Empty-5", strategy="epsilon_greedy", seed=seed,
+        metrics=pd.DataFrame({"step": [0], "eval_return_mean": [0.5]}),
+        steps=np.asarray(steps), counts=counts,
+        config={"total_steps": total_steps},
+    )
+
+
+def test_build_analysis_table_names_every_unusable_run_at_once():
+    """One bad snapshot grid used to abort the whole 260-run table at the first
+    run it hit, so you learned about the next one only after re-running. Report
+    them all, and say which."""
+    good = _fake_run(0, np.arange(10_000, 100_001, 10_000))
+    bad_a = _fake_run(1, np.array([50_000, 100_000]))
+    bad_b = _fake_run(2, np.array([60_000, 100_000]))
+
+    with pytest.raises(ValueError) as excinfo:
+        build_analysis_table([good, bad_a, bad_b])
+
+    message = str(excinfo.value)
+    assert "Empty-5/epsilon_greedy/seed1" in message
+    assert "Empty-5/epsilon_greedy/seed2" in message
+    assert "seed0" not in message
+
+
+def test_build_analysis_table_is_unchanged_when_every_run_is_usable():
+    df = build_analysis_table([_fake_run(0, np.arange(10_000, 100_001, 10_000)),
+                               _fake_run(1, np.arange(10_000, 100_001, 10_000))])
+    assert len(df) == 2
+    assert {"early_auc_raw", "early_auc_task"} <= set(df.columns)

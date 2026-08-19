@@ -1,5 +1,32 @@
 # Task 4 — Statistics: the central test, rliable, rank stability
 
+> **AMENDED 2026-08-19 by the tasks 1-4 review. Four pieces of code below are
+> SUPERSEDED — read `src/rlx/analysis/stats.py`, not this file, for their current
+> form.**
+>
+> - `rank_stability` ranked strategies by `mean`; spec §7.4 says **IQM**. With 5
+>   seeds one collapsed run reorders two clearly-separated strategies — the two
+>   disagreed on **7 of 13 instances**. Now uses `_iqm`.
+> - `aggregate_correlation`'s `confirms_h1` was `bool(ci_low > 0)`, which is only
+>   half of the criterion spec §1 states in advance. It now also requires
+>   `trend_with_difficulty > 0`, and reports `ci_excludes_zero` separately. Its
+>   degenerate branch returned a dict **missing** `confirms_h1`, which would have
+>   raised `KeyError` inside task 6's `report.py`; all branches now share one
+>   return shape.
+> - `within_instance_correlation` gained a per-instance bootstrap CI
+>   (`rho_ci_low`, `rho_ci_high`) — spec §7.3 **step 2**, previously unimplemented
+>   — and a `seed` argument.
+> - `build_analysis_table` now collects every unusable run and names them all in
+>   one error, instead of aborting at the first.
+>
+> **Two functions spec §7.2 requires were missing entirely and have been added:**
+> `performance_profile(df, taus=None, seed=0)` and
+> `compare_coverage_predictors(df, seed=0)` (the H2 test: larger correlation
+> **and** non-overlapping CIs).
+>
+> Full reasoning in `docs/decision_log.md`, "A full review of tasks 1-4 found
+> nine things, and we fixed all nine".
+
 This task contains the result the whole project is built to produce. It also
 contains the one mistake that would silently invalidate it.
 

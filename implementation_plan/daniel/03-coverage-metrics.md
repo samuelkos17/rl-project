@@ -1,5 +1,17 @@
 # Task 3 — Coverage metrics
 
+> **AMENDED 2026-08-19 by the tasks 1-4 review. The `early_auc` code below is
+> SUPERSEDED — do not copy it.** It divided the integral by the span of the
+> snapshots that happened to fall inside the window
+> (`steps[inside][-1] - steps[inside][0]`) instead of by the window width
+> `frac * total_steps` that spec §6.4 specifies. `train.py` snapshots at
+> `step > 0`, so no real run has a point at step 0 and the first slice of the
+> window was missing: values came out **~12% too high**. Every test in the plan
+> passes a step grid starting at 0, which is the one shape a real run never
+> produces. The shipped version prepends `(0, 0.0)` and divides by the window.
+> Rank-invariant, so no correlation changed. See `docs/decision_log.md`,
+> "A full review of tasks 1-4 found nine things".
+
 The measurement the whole "why" story rests on.
 
 **Files:**
