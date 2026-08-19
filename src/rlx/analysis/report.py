@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from rlx.analysis.aggregate import load_all
+from rlx.analysis.aggregate import FAMILIES, load_all, ordered_instances
 from rlx.analysis.stats import (
     _iqm, _score_matrices, aggregate_correlation, build_analysis_table,
     compare_coverage_predictors, iqm_by_strategy, performance_profile,
@@ -50,6 +50,19 @@ def _trend_per_family(agg: dict) -> str:
     return ", ".join(f"{fam} {_num(rho)}" for fam, rho in sorted(per_family.items()))
 
 
+def _in_report_order(per_instance: pd.DataFrame) -> pd.DataFrame:
+    """Sort a per-instance table by family, then difficulty, for printing only.
+
+    Not inside `within_instance_correlation`: `aggregate_correlation` bootstraps
+    over the rows it is handed, so reordering them there would move the headline
+    CI by pure resampling noise for no reason at all.
+    """
+    order = {env_id: i for i, env_id in enumerate(ordered_instances(per_instance))}
+    # kind="stable": the full per-run table repeats each env_id 20 times, and the
+    # default sort would shuffle the strategy/seed order load_all established.
+    return per_instance.sort_values("env_id", key=lambda s: s.map(order), kind="stable")
+
+
 def _h1_section(df: pd.DataFrame) -> str:
     lines = [
         "## H1 -- does early coverage predict final return?", "",
@@ -65,19 +78,19 @@ def _h1_section(df: pd.DataFrame) -> str:
             f"### {label}", "",
             f"- Mean within-instance rho: **{_num(agg['mean_rho'])}**",
             f"- 95% bootstrap CI on that mean: {_ci(agg['ci_low'], agg['ci_high'])}",
-            f"- CI excludes zero: **{agg['ci_excludes_zero']}**",
+            f"- 95% CI lies entirely above zero: **{agg['ci_above_zero']}**",
             f"- Instances with usable variance: {agg['n_instances']} of "
             f"{df['env_id'].nunique()}",
             f"- Trend with difficulty: {_num(agg['trend_with_difficulty'])} "
             f"(H1 predicts positive: stronger on harder mazes)",
             f"- Trend per family: {_trend_per_family(agg)}",
-            f"- **H1 confirmed (CI excludes zero AND trend positive): "
+            f"- **H1 confirmed (CI entirely above zero AND trend positive): "
             f"{agg['confirms_h1']}**", "",
         ]
         if agg["n_instances"] < 3:
             # A bootstrap CI over one or two numbers is not an interval, and it
-            # can still print "excludes zero". Say so where the number is, not
-            # in a footnote nobody reads.
+            # can still print "entirely above zero". Say so where the number
+            # is, not in a footnote nobody reads.
             lines += [
                 "> **Do not quote that CI.** It resamples "
                 + ("a single per-instance correlation" if agg["n_instances"] == 1
@@ -90,17 +103,53 @@ def _h1_section(df: pd.DataFrame) -> str:
         lines += [
             "Per instance. A NaN `rho` means every run on that instance scored the",
             "same, so there was nothing to correlate. That is a finding, not a gap:",
-            "", per.round(3).to_markdown(index=False), "",
+            "", _in_report_order(per).round(3).to_markdown(index=False), "",
         ]
     return "\n".join(lines)
+
+
+def _identical_predictor_instances(df: pd.DataFrame) -> list[str]:
+    """Instances where raw and task-relevant coverage are the same number.
+
+    On the Empty family they are identical for every run and every seed, and not
+    by accident: start and goal are opposite corners of an open grid, so every
+    reachable cell lies on some shortest path and `task_relevant_mask` equals
+    `reachable_mask` (ratio 1.00, measured on all three Empty instances). Those
+    instances carry no information about H2 whatsoever, and averaging them in
+    pulls the two correlations together -- i.e. towards "the CIs overlap", which
+    is exactly the verdict H2 fails on.
+    """
+    identical = (df.assign(same=df["early_auc_raw"] == df["early_auc_task"])
+                   .groupby("env_id")["same"].all())
+    return [env_id for env_id in ordered_instances(df) if identical[env_id]]
 
 
 def _h2_section(df: pd.DataFrame) -> str:
     """H2 is a comparison of two intervals, so the file states the verdict."""
     cmp = compare_coverage_predictors(df)
     raw, task = cmp["raw"], cmp["task"]
+    tied = _identical_predictor_instances(df)
+    # Which instances DO separate the two measures is read off the data too. On
+    # the pilot, DoorKey-5 is itself one of the tied ones, so a sentence that
+    # named DoorKey as the place to look would have been wrong there.
+    informative = [e for e in ordered_instances(df) if e not in tied]
+    where = (", ".join(informative) if informative
+             else "**none of them** -- this dataset cannot test H2 at all")
+    caveat = [
+        f"> **{len(tied)} of {df['env_id'].nunique()} instances cannot answer this "
+        f"question at all:** " + ", ".join(tied) + ". There the two coverage "
+        "measures are the *same number* for every run, because every reachable "
+        "cell lies on some shortest path, so the task-relevant mask equals the "
+        "reachable mask. They contribute no evidence either way and drag the two "
+        "correlations towards each other -- that is, towards \"the CIs overlap\". "
+        f"The instances that actually separate the two measures are: {where}. "
+        "Read the verdict below with that in mind, and quote those when the "
+        "distinction has to be shown doing real work.",
+        "",
+    ] if tied else []
     return "\n".join([
         "## H2 -- is task-relevant coverage the better predictor?", "",
+        *caveat,
         f"- Raw coverage: {_num(raw['mean_rho'])} "
         f"{_ci(raw['ci_low'], raw['ci_high'])}",
         f"- Task-relevant coverage: {_num(task['mean_rho'])} "
@@ -117,7 +166,7 @@ def _h2_section(df: pd.DataFrame) -> str:
 
 def _iqm_section(df: pd.DataFrame) -> str:
     rows = []
-    for env_id in sorted(df["env_id"].unique()):
+    for env_id in ordered_instances(df):
         for strategy, r in iqm_by_strategy(df, env_id).items():
             rows.append({"env_id": env_id, "strategy": strategy,
                          "iqm": round(r["iqm"], 3),
@@ -176,7 +225,8 @@ def _improvement_section(df: pd.DataFrame) -> str:
         "which matters here, because returns are heavily tied at exactly 0.0 on",
         "the mazes nothing solves.", "",
     ]
-    for family, group in df.groupby("family", sort=True):
+    for family in (f for f in FAMILIES if (df["family"] == f).any()):
+        group = df[df["family"] == family]
         table = pd.DataFrame(
             [[round(probability_of_improvement(group, a, b), 3) for b in strategies]
              for a in strategies],
@@ -202,7 +252,8 @@ def _winners_section(df: pd.DataFrame) -> str:
       into the report as a result.
     """
     rows = []
-    for env_id, group in df.groupby("env_id", sort=True):
+    for env_id in ordered_instances(df):
+        group = df[df["env_id"] == env_id]
         iqm = group.groupby("strategy")["final_return"].apply(
             lambda v: _iqm(v.to_numpy()))
         best = float(iqm.max())
@@ -262,10 +313,10 @@ def build_report(results_root: Path, out_path: Path) -> None:
         "Kendall's tau between each instance's strategy ranking (by IQM) and the\n"
         "ranking on the easiest instance of the same family. 1.0 is the same\n"
         "order, -1.0 exactly reversed, 0 unrelated.\n",
-        rank_stability(df).round(3).to_markdown(index=False) + "\n",
+        _in_report_order(rank_stability(df)).round(3).to_markdown(index=False) + "\n",
         _winners_section(df),
         "## Full per-run table\n",
-        df.round(4).to_markdown(index=False) + "\n",
+        _in_report_order(df).round(4).to_markdown(index=False) + "\n",
     ]
 
     out_path = Path(out_path)

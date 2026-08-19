@@ -1,5 +1,13 @@
 # Task 6 — Report scaffold with auto-filled numbers
 
+> **AMENDED AGAIN 2026-08-19 by the tasks 1-6 review.** The key this file calls
+> `ci_excludes_zero` is now **`ci_above_zero`**, because `ci_low > 0` is what it
+> tests; the old name printed "CI excludes zero: False" for a CI of
+> [-0.80, -0.40]. `report.py` prints it as "95% CI lies entirely above zero", and
+> `results.md` now also names the instances on which H2 cannot be answered at all
+> (raw and task-relevant coverage are the same number on the whole Empty family)
+> and orders every table by family then difficulty, matching the figures.
+
 > **AMENDED 2026-08-19 by the tasks 1-4 review. Two things in the code below are
 > out of date — read `src/rlx/analysis/stats.py` for the current API.**
 >

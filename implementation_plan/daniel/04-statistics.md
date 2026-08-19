@@ -27,6 +27,21 @@
 > Full reasoning in `docs/decision_log.md`, "A full review of tasks 1-4 found
 > nine things, and we fixed all nine".
 
+> **AMENDED 2026-08-19 (second pass, tasks 1-6 review): `aggregate_correlation`'s
+> `ci_excludes_zero` key is now `ci_above_zero`.** It tests `ci_low > 0`, which is
+> "the whole interval sits above zero", not "the interval excludes zero". Under
+> the old name a mean rho of -0.6 with a CI of [-0.80, -0.40] printed
+> "CI excludes zero: False" into `results.md` -- a false statement about the
+> project's headline number. Testing "excludes zero" honestly and feeding THAT to
+> `confirms_h1` would be worse: H1 would be confirmed by a strong NEGATIVE
+> correlation. `test_a_wholly_negative_ci_is_not_reported_as_lying_above_zero`
+> fails if this is reverted.
+>
+> **The negative control now has tests.** `test_h1_is_not_confirmed_on_the_negative_control`
+> and `test_h1_is_confirmed_on_the_dataset_that_has_the_effect` run the real
+> pipeline over both synthetic datasets. Everything else in `tests/test_stats.py`
+> checks that the analysis can say yes; these two check that it can say no.
+
 This task contains the result the whole project is built to produce. It also
 contains the one mistake that would silently invalidate it.
 

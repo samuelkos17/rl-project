@@ -135,11 +135,19 @@ def aggregate_correlation(per_instance: pd.DataFrame, seed: int = 0) -> dict:
     a 2-point Spearman is +-1 by construction and says nothing. If no family
     qualifies the trend is NaN -- that is "we cannot measure this", not "no trend".
 
-    `confirms_h1` requires BOTH conditions spec section 1 states: the CI on the
-    mean excludes zero, AND the correlation grows with difficulty. `ci_excludes_zero`
-    is reported separately because it is the half most likely to hold on its own.
-    A NaN trend leaves `confirms_h1` False -- "not confirmed", which is not the
-    same as "disconfirmed"; read `trend_with_difficulty` to tell the two apart.
+    `confirms_h1` requires BOTH conditions spec section 1 states: a POSITIVE
+    correlation whose CI excludes zero, AND a correlation that grows with
+    difficulty. `ci_above_zero` is reported separately because it is the half
+    most likely to hold on its own. A NaN trend leaves `confirms_h1` False --
+    "not confirmed", which is not the same as "disconfirmed"; read
+    `trend_with_difficulty` to tell the two apart.
+
+    The key is `ci_above_zero`, not `ci_excludes_zero`, because `ci_low > 0` is
+    what it actually tests. Under the old name a mean rho of -0.6 with a CI of
+    [-0.80, -0.40] printed "CI excludes zero: False" into results.md -- a false
+    statement about a CI that excludes zero emphatically. Testing "excludes zero"
+    honestly (`ci_low > 0 or ci_high < 0`) and feeding THAT to `confirms_h1`
+    would be worse still: it would confirm H1 on a strong negative correlation.
     """
     valid = per_instance.dropna(subset=["rho"])
     per_family = {}
@@ -158,7 +166,7 @@ def aggregate_correlation(per_instance: pd.DataFrame, seed: int = 0) -> dict:
 
     # One return shape in every branch. The degenerate branch used to omit
     # confirms_h1, so a fully tied sweep raised KeyError inside report.py.
-    ci_excludes_zero = bool(ci_low > 0)
+    ci_above_zero = bool(ci_low > 0)
     return {
         "mean_rho": mean_rho,
         "ci_low": ci_low,
@@ -166,8 +174,8 @@ def aggregate_correlation(per_instance: pd.DataFrame, seed: int = 0) -> dict:
         "n_instances": len(valid),
         "trend_with_difficulty": trend,
         "trend_per_family": per_family,
-        "ci_excludes_zero": ci_excludes_zero,
-        "confirms_h1": bool(ci_excludes_zero and trend > 0),
+        "ci_above_zero": ci_above_zero,
+        "confirms_h1": bool(ci_above_zero and trend > 0),
     }
 
 

@@ -55,7 +55,7 @@ to the same report:
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Figure tests check that files are produced and non-trivial, not that pixels match.
 Judging whether a figure is *good* is your job, by looking at it.
@@ -95,7 +95,7 @@ def test_there_are_exactly_seven(synthetic):
     assert len(FIGURE_NAMES) == 7
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 ```bash
 pytest tests/test_figures.py -v
@@ -107,7 +107,7 @@ Do not skip this because the failure is obvious. Seeing the test fail for the
 reason you expect is what proves the test is actually running and actually
 checking the thing you think it checks.
 
-- [ ] **Step 3: Write `src/rlx/analysis/figures.py`**
+- [x] **Step 3: Write `src/rlx/analysis/figures.py`**
 
 Build it incrementally: write one figure, run it, **look at the output**, then
 write the next. Do not write all seven and render them at the end.
@@ -348,7 +348,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Generate them from synthetic data**
+- [x] **Step 4: Generate them from synthetic data**
 
 ```bash
 python -m rlx.analysis.figures --results results_synthetic --out scratch/figs
@@ -357,7 +357,7 @@ python -m rlx.analysis.figures --results results_synthetic --out scratch/figs
 (`scratch/`, not `/tmp/` — we are on Windows and `/tmp` does not exist outside
 Git Bash. Add `scratch/` to `.gitignore`.)
 
-- [ ] **Step 5: Actually look at every one of them**
+- [x] **Step 5: Actually look at every one of them**
 
 Open all seven PNGs. Do not skip this — the tests only prove the files are not
 empty, not that they are readable. For each, ask:
@@ -370,7 +370,7 @@ empty, not that they are readable. For each, ask:
 Fix what is wrong and regenerate. Repeat until you would be happy putting each
 one in front of the professor. This is Rule 2 — loop until the output is good.
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 ```bash
 pytest tests/test_figures.py -v
@@ -378,7 +378,7 @@ pytest tests/test_figures.py -v
 
 Expected: 3 passed.
 
-- [ ] **Step 7: Log the change**
+- [x] **Step 7: Log the change**
 
 Append to `docs/decision_log.md`, in plain language:
 

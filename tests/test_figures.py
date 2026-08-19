@@ -173,9 +173,10 @@ def test_the_report_states_both_hypothesis_verdicts(synthetic, tmp_path):
     out = tmp_path / "results.md"
     build_report(synthetic, out)
     text = out.read_text(encoding="utf-8")
-    assert "H1 confirmed (CI excludes zero AND trend positive)" in text
+    assert "H1 confirmed (CI entirely above zero AND trend positive)" in text
     assert "H2 confirmed (larger AND non-overlapping CIs)" in text
-    assert "CI excludes zero: **" in text, "the half-criterion is reported separately"
+    assert "95% CI lies entirely above zero: **" in text, \
+        "the half-criterion is reported separately"
 
 
 @pytest.fixture(scope="module")
@@ -303,3 +304,78 @@ def test_the_report_refuses_an_incomplete_run_matrix_before_writing(synthetic, t
         build_report(incomplete, out)
 
     assert not out.exists(), "a refused report must leave no half-written file"
+
+
+def test_tables_run_easiest_to_hardest_within_each_family(synthetic, tmp_path):
+    """REGRESSION TEST. Do not delete.
+
+    Sorting instance names alphabetically puts DoorKey-10 before DoorKey-5 and
+    Empty-16 before Empty-5, so every table in results.md ran in a different
+    order from the figures printed beside it, with difficulty jumping around
+    inside a family.
+    """
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(synthetic, out)
+    section = (out.read_text(encoding="utf-8")
+               .split("### Per instance")[1].split("\n## ")[0])
+    seen = [line.split("|")[1].strip() for line in section.splitlines()
+            if line.startswith("| ") and "-" in line.split("|")[1]]
+    ordered = list(dict.fromkeys(seen))
+
+    assert ordered[:3] == ["Empty-5", "Empty-8", "Empty-16"], ordered
+    assert ordered[3:8] == ["DoorKey-5", "DoorKey-6", "DoorKey-7", "DoorKey-8",
+                            "DoorKey-10"], ordered
+    assert ordered[8] == "MultiRoom-N2", ordered
+
+
+def test_h2_names_the_instances_that_cannot_answer_it(synthetic, tmp_path):
+    """On the Empty family raw and task-relevant coverage are the same number for
+    every run -- every reachable cell is on some shortest path, so the two masks
+    are identical (ratio 1.00 on all three instances). Those instances carry no
+    evidence about H2 and pull the two correlations together, i.e. towards the
+    "CIs overlap" verdict H2 fails on. The file has to say so where the verdict
+    is, not leave it to whoever remembers STATUS.md.
+    """
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(synthetic, out)
+    section = (out.read_text(encoding="utf-8")
+               .split("## H2 -- is task-relevant")[1].split("\n## ")[0])
+
+    assert "cannot answer this question at all" in section
+    for env_id in ("Empty-5", "Empty-8", "Empty-16"):
+        assert env_id in section, env_id
+    # And it names where the distinction DOES work, read off the same data --
+    # on the pilot's two instances DoorKey-5 is itself tied, so a sentence
+    # hard-coding "DoorKey" as the place to look would have been wrong there.
+    assert "The instances that actually separate the two measures are" in section
+    assert "DoorKey-8" in section.split("actually separate the two measures are")[1]
+
+
+def test_identical_predictor_instances_are_detected_from_the_data(): 
+    """Derived from the numbers, not from a hard-coded list of Empty instances:
+    if the mask definition ever changes, the warning follows it."""
+    import pandas as pd
+    from rlx.analysis.report import _identical_predictor_instances
+
+    df = pd.DataFrame({
+        "env_id": ["Empty-5"] * 2 + ["DoorKey-8"] * 2,
+        "early_auc_raw": [0.4, 0.6, 0.4, 0.6],
+        "early_auc_task": [0.4, 0.6, 0.5, 0.9],
+    })
+    assert _identical_predictor_instances(df) == ["Empty-5"]
+
+
+def test_curves_of_different_lengths_are_refused_not_truncated():
+    """fig1 and fig3 average a whole family together. One short run used to
+    silently shorten every curve in the panel while the axis still claimed the
+    full run -- the figure drew, and drew the wrong thing."""
+    import numpy as np
+    from rlx.analysis.figures import _stack_curves
+
+    assert _stack_curves([np.zeros(4), np.ones(4)], "fig1 Empty/noisy").shape == (2, 4)
+    with pytest.raises(ValueError, match="disagree on their number of points"):
+        _stack_curves([np.zeros(4), np.ones(3)], "fig1 Empty/noisy")

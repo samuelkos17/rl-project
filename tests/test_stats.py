@@ -1,11 +1,20 @@
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 
+from rlx.analysis.aggregate import load_all
 from rlx.analysis.stats import (
-    aggregate_correlation, build_analysis_table, iqm_by_strategy, rank_stability,
-    within_instance_correlation,
+    aggregate_correlation, build_analysis_table, compare_coverage_predictors,
+    iqm_by_strategy, rank_stability, within_instance_correlation,
 )
+
+#: Resolved from this file, not the working directory, so the suite passes no
+#: matter where pytest was launched from.
+GENERATOR = Path(__file__).resolve().parents[1] / "scripts" / "make_synthetic_results.py"
 
 
 def _frame(rows):
@@ -246,7 +255,7 @@ def test_h1_is_not_confirmed_when_the_effect_shrinks_with_difficulty():
             for d, r in ((5, 0.90), (8, 0.70), (16, 0.50))]
     agg = aggregate_correlation(pd.DataFrame(rows))
 
-    assert agg["ci_excludes_zero"] is True
+    assert agg["ci_above_zero"] is True
     assert agg["trend_with_difficulty"] < 0
     assert agg["confirms_h1"] is False
 
@@ -255,8 +264,29 @@ def test_h1_is_confirmed_when_both_conditions_hold():
     rows = [{"env_id": f"Empty-{d}", "family": "Empty", "difficulty": d, "rho": r}
             for d, r in ((5, 0.50), (8, 0.70), (16, 0.90))]
     agg = aggregate_correlation(pd.DataFrame(rows))
-    assert agg["ci_excludes_zero"] is True
+    assert agg["ci_above_zero"] is True
     assert agg["confirms_h1"] is True
+
+
+def test_a_wholly_negative_ci_is_not_reported_as_lying_above_zero():
+    """REGRESSION TEST. Do not delete.
+
+    The key used to be called `ci_excludes_zero` while testing `ci_low > 0`. On
+    this data the CI is about [-0.80, -0.40] -- it excludes zero emphatically --
+    and results.md printed "CI excludes zero: False", a false statement about the
+    project's headline number.
+
+    Testing "excludes zero" honestly and feeding that to `confirms_h1` would be
+    worse: H1 would be confirmed by a strong NEGATIVE correlation. So the key
+    says what it tests, and H1 still needs the correlation to be positive.
+    """
+    rows = [{"env_id": f"Empty-{d}", "family": "Empty", "difficulty": d, "rho": r}
+            for d, r in ((5, -0.50), (8, -0.60), (16, -0.70))]
+    agg = aggregate_correlation(pd.DataFrame(rows))
+
+    assert agg["ci_high"] < 0, "fixture is wrong: the CI must sit below zero"
+    assert agg["ci_above_zero"] is False
+    assert agg["confirms_h1"] is False
 
 
 def test_an_unmeasurable_trend_does_not_confirm_h1():
@@ -444,3 +474,60 @@ def test_build_analysis_table_is_unchanged_when_every_run_is_usable():
                                _fake_run(1, np.arange(10_000, 100_001, 10_000))])
     assert len(df) == 2
     assert {"early_auc_raw", "early_auc_task"} <= set(df.columns)
+
+
+# --- the negative control ----------------------------------------------------
+# Every other test in this file checks that the analysis can say YES. These two
+# check that it can say NO. Without them a refactor that made every correlation
+# come out positive would pass the whole suite.
+
+
+def _analysis_table(out_dir: Path, *args: str) -> pd.DataFrame:
+    subprocess.run([sys.executable, str(GENERATOR), "--out", str(out_dir), *args],
+                   check=True)
+    return build_analysis_table(load_all(out_dir))
+
+
+@pytest.fixture(scope="module")
+def no_effect(tmp_path_factory):
+    """`--no-effect`: final return is generated independently of coverage."""
+    return _analysis_table(tmp_path_factory.mktemp("noeffect"), "--no-effect")
+
+
+@pytest.fixture(scope="module")
+def with_effect(tmp_path_factory):
+    """The default fixture: more early coverage is MADE to score better, and more
+    so on harder instances."""
+    return _analysis_table(tmp_path_factory.mktemp("effect"))
+
+
+def test_h1_is_not_confirmed_on_the_negative_control(no_effect):
+    """REGRESSION TEST. Do not delete.
+
+    Return is independent of coverage here by construction, so the honest answer
+    is "no relationship". Measured 2026-08-19: mean rho -0.004, CI
+    [-0.104, +0.096], per-instance rho spanning -0.282 to +0.281.
+    """
+    for column in ("early_auc_raw", "early_auc_task"):
+        agg = aggregate_correlation(within_instance_correlation(no_effect, column))
+        assert agg["n_instances"] == 13, column
+        assert abs(agg["mean_rho"]) < 0.15, (column, agg["mean_rho"])
+        assert agg["ci_low"] < 0 < agg["ci_high"], (column, agg)
+        assert agg["ci_above_zero"] is False, column
+        assert agg["confirms_h1"] is False, column
+    assert compare_coverage_predictors(no_effect)["confirms_h2"] is False
+
+
+def test_h1_is_confirmed_on_the_dataset_that_has_the_effect(with_effect):
+    """The other half of the control: the same code path must say YES where the
+    answer is built in. Measured 2026-08-19: mean rho +0.696, CI
+    [+0.546, +0.833], trend +0.900.
+
+    Both halves matter. A pipeline that always says yes and one that always says
+    no are equally useless, and only running both fixtures tells them apart.
+    """
+    agg = aggregate_correlation(within_instance_correlation(with_effect, "early_auc_raw"))
+    assert agg["mean_rho"] > 0.5
+    assert agg["ci_above_zero"] is True
+    assert agg["trend_with_difficulty"] > 0.5
+    assert agg["confirms_h1"] is True

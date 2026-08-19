@@ -92,10 +92,17 @@ def make_run(out_root: Path, env_id: str, strategy: str, seed: int, effect: bool
     # states this fixture ever marks as visited -- both in `counts` below and in
     # the `distinct_states` column. Same layout_seed=seed convention as a real
     # run, so this is the same maze coverage.py grades the run against.
+    #
+    # The goal cell is excluded as well. train.py records the agent's position at
+    # the top of each step and resets in the same iteration the episode ends, so
+    # no real run ever logs a visit there (verified on the pilot: goal_visits == 0
+    # in all 16 runs). A fixture that fills it would be the one shape real data
+    # cannot take -- which is how the missing-goal bug survived until 2026-08-19.
     info = grid_info(env_id, seed)
     w, h = info.width, info.height
-    reachable_idx = np.flatnonzero(
-        np.repeat(reachable_mask(info)[:, :, None], 4, axis=2).ravel())
+    loggable = reachable_mask(info).copy()
+    loggable[info.goal] = False
+    reachable_idx = np.flatnonzero(np.repeat(loggable[:, :, None], 4, axis=2).ravel())
 
     eval_steps = np.arange(0, TOTAL_STEPS, EVAL_EVERY)
     coverage = 1.0 - np.exp(-rate * eval_steps / (60_000 * (1 + 2 * difficulty)))

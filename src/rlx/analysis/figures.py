@@ -21,7 +21,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
 
-from rlx.analysis.aggregate import RunResult, load_all  # noqa: E402
+from rlx.analysis.aggregate import (  # noqa: E402
+    FAMILIES, RunResult, load_all, ordered_instances,
+)
 from rlx.analysis.coverage import raw_coverage, task_relevant_coverage  # noqa: E402
 from rlx.analysis.stats import (  # noqa: E402
     _score_matrices, aggregate_correlation, build_analysis_table, iqm_by_strategy,
@@ -50,7 +52,6 @@ LABELS = {
     "count_based": "Count-based",
     "noisy": "NoisyNets",
 }
-FAMILIES = ("Empty", "DoorKey", "MultiRoom")
 DIFFICULTY_LABEL = {"Empty": "Grid size", "DoorKey": "Grid size",
                     "MultiRoom": "Number of rooms"}
 N_BAND_RESAMPLES = 1_000
@@ -87,25 +88,30 @@ def _eval_curve(run: RunResult):
     return rows["step"].to_numpy(), rows["eval_return_mean"].to_numpy()
 
 
-def _stack_curves(curves: list[np.ndarray]) -> np.ndarray:
-    """Truncate a set of curves to their common length and stack them."""
-    n = min(len(c) for c in curves)
-    return np.stack([c[:n] for c in curves])
+def _stack_curves(curves: list[np.ndarray], what: str) -> np.ndarray:
+    """Stack equal-length curves. Refuses ragged input rather than truncating.
+
+    fig1 and fig3 average a whole family of runs together, so one run with fewer
+    evaluation or snapshot points used to silently shorten every other curve in
+    the panel -- the figure still drew, just over less training than its axis
+    claimed. Runs of one sweep share `total_steps`, `eval_every` and
+    `snapshot_every`, so ragged input means two different configurations got
+    mixed into one results tree. Same rule as early_auc and _score_matrices: say
+    so, do not quietly stand in for it.
+    """
+    lengths = sorted({len(c) for c in curves})
+    if len(lengths) > 1:
+        raise ValueError(
+            f"{what}: runs disagree on their number of points ({lengths}). "
+            f"Averaging them would truncate every curve to {lengths[0]} while the "
+            f"axis still claims the full run. The results tree mixes two "
+            f"configurations -- separate them, or re-run the odd ones out."
+        )
+    return np.stack(curves)
 
 
 def _legend(ax) -> None:
     ax.legend(frameon=False, fontsize=9)
-
-
-def _ordered_instances(df: pd.DataFrame) -> list[str]:
-    """Instance names ordered by family, then difficulty.
-
-    Sorting the names alphabetically puts DoorKey-10 before DoorKey-5 and
-    Empty-16 before Empty-5, so difficulty would not read left to right.
-    """
-    order = (df[["env_id", "family", "difficulty"]].drop_duplicates()
-               .sort_values(["family", "difficulty"]))
-    return order["env_id"].tolist()
 
 
 def _present_families(df: pd.DataFrame) -> tuple:
@@ -151,7 +157,8 @@ def _step_axis(ax) -> None:
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v / 1000:.0f}k"))
 
 
-def fig1_learning_curves(runs, df, out_dir) -> None:
+def fig1_learning_curves(runs: list[RunResult], df: pd.DataFrame,
+                         out_dir: Path) -> None:
     """Return over training, one panel per family, bootstrap CI across runs."""
     families = _present_families(df)
     fig, axes = _family_axes(families)
@@ -162,8 +169,8 @@ def fig1_learning_curves(runs, df, out_dir) -> None:
             if not group:
                 continue
             curves = [_eval_curve(r)[1] for r in group]
-            stacked = _stack_curves(curves)
-            steps = _eval_curve(group[0])[0][:stacked.shape[1]]
+            stacked = _stack_curves(curves, f"fig1 {family}/{strategy}")
+            steps = _eval_curve(group[0])[0]
             mean, low, high = _bootstrap_band(stacked)
             ax.plot(steps, mean, color=COLORS[strategy], label=LABELS[strategy], lw=1.6)
             ax.fill_between(steps, low, high, color=COLORS[strategy], alpha=0.18, lw=0)
@@ -175,7 +182,8 @@ def fig1_learning_curves(runs, df, out_dir) -> None:
     _save(fig, out_dir, "fig1_learning_curves")
 
 
-def fig2_difficulty_curve(runs, df, out_dir) -> None:
+def fig2_difficulty_curve(runs: list[RunResult], df: pd.DataFrame,
+                          out_dir: Path) -> None:
     """Final return against difficulty. The curve the professor asked for."""
     families = _present_families(df)
     fig, axes = _family_axes(families)
@@ -206,7 +214,8 @@ def fig2_difficulty_curve(runs, df, out_dir) -> None:
     _save(fig, out_dir, "fig2_difficulty_curve")
 
 
-def fig3_coverage_curves(runs, df, out_dir) -> None:
+def fig3_coverage_curves(runs: list[RunResult], df: pd.DataFrame,
+                         out_dir: Path) -> None:
     """Both coverage measures over training, pooled across instances."""
     fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
     panels = ((raw_coverage, "Raw coverage"),
@@ -217,8 +226,8 @@ def fig3_coverage_curves(runs, df, out_dir) -> None:
             if not group:
                 continue
             curves = [measure(r.counts, grid_info(r.env_id, r.seed)) for r in group]
-            stacked = _stack_curves(curves)
-            steps = group[0].steps[:stacked.shape[1]]
+            stacked = _stack_curves(curves, f"fig3 {panel}/{strategy}")
+            steps = group[0].steps
             mean, low, high = _bootstrap_band(stacked)
             ax.plot(steps, mean, color=COLORS[strategy], label=LABELS[strategy], lw=1.6)
             ax.fill_between(steps, low, high, color=COLORS[strategy], alpha=0.18, lw=0)
@@ -230,7 +239,8 @@ def fig3_coverage_curves(runs, df, out_dir) -> None:
     _save(fig, out_dir, "fig3_coverage_curves")
 
 
-def fig4_coverage_vs_return(runs, df, out_dir) -> None:
+def fig4_coverage_vs_return(runs: list[RunResult], df: pd.DataFrame,
+                            out_dir: Path) -> None:
     """THE central result: early coverage against final return, per instance.
 
     Panels 1-2 are the scatter with ONE REGRESSION LINE PER INSTANCE. Never one
@@ -264,13 +274,18 @@ def fig4_coverage_vs_return(runs, df, out_dir) -> None:
     axes[0].set_ylabel("Final return (0-1)")
     _legend(axes[1])
 
-    forest = per_instance["early_auc_raw"].sort_values(["family", "difficulty"])
-    forest = forest.reset_index(drop=True)
+    order = {env_id: i for i, env_id in enumerate(ordered_instances(df))}
+    forest = (per_instance["early_auc_raw"]
+              .sort_values("env_id", key=lambda s: s.map(order))
+              .reset_index(drop=True))
     positions = np.arange(len(forest))
     # Families are told apart by MARKER, not colour: the four strategy colours
     # already mean something else in the two panels to the left, and reusing them
     # here for families inside the same figure would be genuinely misleading.
-    for marker, (family, group) in zip("os^", forest.groupby("family")):
+    # sort=False: `forest` is already in report order, so the families come out
+    # Empty, DoorKey, MultiRoom -- the order of the panels in fig1, fig2 and fig6
+    # and of the legend here. Sorting would relabel them alphabetically.
+    for marker, (family, group) in zip("os^", forest.groupby("family", sort=False)):
         # .to_numpy() throughout: a family with one instance would otherwise hand
         # matplotlib one-element Series, which it deprecates and will later reject.
         rho = group["rho"].to_numpy()
@@ -291,7 +306,8 @@ def fig4_coverage_vs_return(runs, df, out_dir) -> None:
     _save(fig, out_dir, "fig4_coverage_vs_return")
 
 
-def fig5_iqm(runs, df, out_dir) -> None:
+def fig5_iqm(runs: list[RunResult], df: pd.DataFrame,
+             out_dir: Path) -> None:
     """Which strategy wins, two ways: one robust number, and the whole shape.
 
     An IQM hides the distribution -- two strategies with the same IQM can differ
@@ -299,7 +315,7 @@ def fig5_iqm(runs, df, out_dir) -> None:
     the right shows that (spec 7.2), and where two profiles cross is usually the
     interesting part.
     """
-    env_ids = _ordered_instances(df)
+    env_ids = ordered_instances(df)
     # Once per instance, not once per (instance, strategy): each call already
     # returns every strategy and runs its own bootstrap.
     by_env = {env_id: iqm_by_strategy(df, env_id) for env_id in env_ids}
@@ -343,7 +359,8 @@ def fig5_iqm(runs, df, out_dir) -> None:
     _save(fig, out_dir, "fig5_iqm")
 
 
-def fig6_rank_stability(runs, df, out_dir) -> None:
+def fig6_rank_stability(runs: list[RunResult], df: pd.DataFrame,
+                        out_dir: Path) -> None:
     """Does the strategy that wins on easy mazes still win on hard ones? (H3)
 
     One panel per family, like fig1 and fig2, and for the same reason: difficulty
@@ -379,8 +396,8 @@ def fig6_rank_stability(runs, df, out_dir) -> None:
     _save(fig, out_dir, "fig6_rank_stability")
 
 
-def fig7_visitation_heatmaps(runs, df, out_dir, env_id: str | None = None,
-                             seed: int = 0) -> None:
+def fig7_visitation_heatmaps(runs: list[RunResult], df: pd.DataFrame, out_dir: Path,
+                             env_id: str | None = None, seed: int = 0) -> None:
     """Where each strategy actually went. The poster figure.
 
     All four panels share one colour scale, so they can be compared at all: with

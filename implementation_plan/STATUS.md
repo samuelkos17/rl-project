@@ -4,7 +4,8 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-19** (third update, after Daniel's task 6), by Daniel.
+Last updated: **2026-08-19** (fourth update, after the review of Daniel's tasks
+1-6), by Daniel.
 
 
 ---
@@ -15,8 +16,56 @@ Last updated: **2026-08-19** (third update, after Daniel's task 6), by Daniel.
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets, ✅ knob calibration (`tau_start` 0.1 after pilot) | — | 5 write-ups |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold | — | **all analysis tasks done**; on 22.08 run figures + report against the real results (task 6 steps 7-9) |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold, ✅ review of 1-6 | — | **all analysis tasks done**; on 22.08 run figures + report against the real results (task 6 steps 7-9) |
 
+
+**Review of tasks 1-6, 2026-08-19 — one thing everyone needs to know.**
+
+**Coverage numbers went up, and the goal square is why.** `train.py` writes the
+agent's position down at the *top* of each step and resets in the same iteration
+the episode ends, so the square the agent wins on is never recorded — in any of
+the 4 directions. Verified: `goal_visits == 0` in all 16 pilot runs, including
+the two that solved Empty-5 with a return of 0.955. Those 4 states were in the
+denominator, capping coverage at `1 - 1/reachable`: **0.857 on DoorKey-5, 0.889
+on Empty-5**, 0.995 on Empty-16. `coverage.py` now drops the goal from numerator
+and denominator alike.
+
+- **No correlation, verdict or ranking changes** — the cap was identical for
+  every run of an instance, and Spearman only uses ranks.
+- **Every coverage LEVEL in a figure or table changes**, most on the small mazes.
+  Any coverage number quoted from before 2026-08-19 is too low.
+- **`task_relevant_mask` still contains the goal.** It is task-relevant by
+  definition; only the measurement is blind to it.
+- **Regenerate `results_synthetic/`** — the fixture used to fill the goal square,
+  which is the one shape real data cannot take.
+
+Five smaller fixes, all in workstream C: the `ci_excludes_zero` key is now
+`ci_above_zero` (see the table below), `early_auc` refuses a snapshot grid that
+stops short of its window, `results.md` names the instances where H2 cannot be
+answered and orders its tables like the figures, and the `--no-effect` negative
+control is now asserted by tests instead of measured by hand. Full reasoning in
+`docs/decision_log.md`, the two entries dated 2026-08-19 at the end.
+
+**For Samuel — one flaky test in YOUR file, found and fixed by the review of
+Daniel's tasks 1-6. One line moved in `tests/test_agent.py`, nothing in
+`src/rlx/agent.py`.** Flagged here because it is your area (CLAUDE.md §4);
+Daniel asked for and got the go-ahead before touching it.
+
+`test_double_dqn_target_differs_from_vanilla_max` failed about **1 run in 20** in
+a fresh process, on unmodified `main`. It was a test bug, not an agent bug — the
+agent is fine.
+
+`torch.manual_seed(1)` sat *after* `DoubleDQNAgent(...)`, so the online and
+target weights came from torch's per-process entropy seed and differed every run.
+Occasionally the online net's argmax matched the target net's on all 64
+observations; the Double-DQN target then equals the vanilla max and
+`assert not np.allclose(double, vanilla)` fires on correct code. Measured:
+`np.allclose` came out `True` for 1 of 60 process seeds.
+
+The seed now sits **above** the constructor. Verified: identical outcome across
+30 different prior RNG states, argmaxes disagreeing on all 64 observations (56
+with the alternative of seeding init and perturbation separately, so this variant
+also has the larger margin), and **0 failures in 40 fresh runs** of the file.
 
 ## What is available on `main` right now
 
@@ -59,17 +108,28 @@ Settled by Daniel's task 2:
 
   | | effect dataset | `--no-effect` control |
   |---|---|---|
-  | within-instance Spearman | **+0.13 to +0.95** | **−0.28 to +0.28** |
-  | p-value range | 0.0000 to 0.5845 | 0.2309 to 0.7837 |
-  | mean rho, 95% CI | **+0.696** [+0.544, +0.836] | **−0.003** [−0.102, +0.095] |
-  | `trend_with_difficulty` | **+0.900** | **+0.167** |
-  | mean per-instance CI width | **0.450** | **0.935** |
-  | `ci_excludes_zero` | `True` | `False` |
+  | within-instance Spearman | **+0.15 to +0.95** | **−0.28 to +0.28** |
+  | p-value range | 0.0000 to 0.5179 | 0.2283 to 0.7575 |
+  | mean rho, 95% CI | **+0.696** [+0.546, +0.833] | **−0.004** [−0.104, +0.096] |
+  | `trend_with_difficulty` | **+0.900** | **+0.000** |
+  | mean per-instance CI width | **0.456** | **0.937** |
+  | `ci_above_zero` | `True` | `False` |
   | `confirms_h1` | `True` | `False` |
   | `confirms_h2` | `False` (by construction) | `False` |
 
-  Re-measured after the 2026-08-19 review; identical to before it, because the
-  `early_auc` fix is a monotone rescaling and Spearman is rank-based.
+  **Both columns are now asserted by tests**, not just measured by hand:
+  `test_h1_is_not_confirmed_on_the_negative_control` and
+  `test_h1_is_confirmed_on_the_dataset_that_has_the_effect` in
+  `tests/test_stats.py`. Everything else in that file checks the analysis can say
+  yes; those two check it can say no.
+
+  Re-measured **2026-08-19 (third time)** after the tasks 1-6 review, which
+  dropped the goal square from the coverage denominator and stopped the fixture
+  filling it. The numbers moved in the third decimal at most: the goal costs
+  every run of an instance the same four states, so the ranks a Spearman uses do
+  not move. The key formerly called `ci_excludes_zero` is now `ci_above_zero` —
+  it tests `ci_low > 0`, and the old name stated something false about a wholly
+  negative interval.
 
   Earlier ranges, for reference: 6-instance fixture 2026-08-18 was +0.49..+0.94
   and −0.22..+0.19; before the reachability fix, 0.58..0.93 and −0.22..+0.15.
@@ -538,7 +598,7 @@ report scaffold (task 6):
 | change | effect |
 |---|---|
 | `within_instance_correlation(df, col, seed=0)` | new `seed` argument; two new columns `rho_ci_low`, `rho_ci_high` |
-| `aggregate_correlation` | new key `ci_excludes_zero`; **`confirms_h1` now requires the difficulty trend to be positive too**, per spec §1 |
+| `aggregate_correlation` | new key `ci_above_zero` (`ci_excludes_zero` until 2026-08-19); **`confirms_h1` now requires the difficulty trend to be positive too**, per spec §1 |
 | `aggregate_correlation` degenerate branch | now returns the same keys as the normal branch — it used to omit `confirms_h1` and crash `report.py` |
 | `rank_stability` | ranks by **IQM**, not mean (spec §7.4). **Tau values differ from before on 7 of 13 instances.** |
 | `early_auc` | normalises by the window, not the snapshot span. **Values are ~12% lower than before.** Rank-invariant, so no correlation changes. |
@@ -619,7 +679,7 @@ Both on `analysis/figures`. Suite **220 passed**.
 - **`06-report-scaffold.md` amended before task 6 starts.** Its draft printed
   `confirms_h1` under the label "CI excludes zero", which stopped being true when
   `confirms_h1` began requiring the difficulty trend as well. The label now uses
-  `ci_excludes_zero` and the hypothesis verdict is a separate line. The banner at
+  `ci_above_zero` and the hypothesis verdict is a separate line. The banner at
   the top of that file also points task 6 at `compare_coverage_predictors` for
   H2, at `performance_profile`, and at the new per-instance CI columns.
 

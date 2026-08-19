@@ -13,7 +13,8 @@ scipy>=1.10
 matplotlib>=3.7
 rliable>=1.0.8
 # The two pins below belong together -- rliable does not work without both.
-# Verified 2026-08-19, see docs/decision_log.md "rliable pins us to pandas 2":
+# Verified 2026-08-19, see docs/decision_log.md, "rliable runs now, and the fix we
+# had recommended was the wrong one":
 #   * rliable 1.2.0 (newest release) calls arch's IIDBootstrap with the keyword
 #     `random_state=`. arch 8.0.0 renamed that parameter to `seed`, so under
 #     arch >= 8 every rliable bootstrap raises TypeError.  -> arch < 8
