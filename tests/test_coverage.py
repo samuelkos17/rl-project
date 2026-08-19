@@ -28,11 +28,12 @@ def test_raw_coverage_of_a_fully_visited_maze_is_one(corridor):
 
 
 def test_raw_coverage_is_the_hand_computed_fraction(corridor):
-    """5 reachable cells x 4 directions = 20 states. Visit 5 of them."""
+    """5 reachable cells, minus the goal cell no run can log, is 4 x 4 = 16
+    states. Visit 5 of them."""
     counts = np.zeros((1, 7, 3, 4), dtype=np.int32)
     counts[0, 1, 1, :] = 1          # 4 states
     counts[0, 2, 1, 0] = 1          # 1 more
-    assert np.isclose(raw_coverage(counts, corridor)[0], 5 / 20)
+    assert np.isclose(raw_coverage(counts, corridor)[0], 5 / 16)
 
 
 def test_repeat_visits_do_not_increase_coverage(corridor):
@@ -89,6 +90,38 @@ def test_task_relevant_coverage_uses_the_smaller_denominator(corridor):
     assert task_relevant_coverage(counts, corridor)[0] >= raw_coverage(counts, corridor)[0]
 
 
+def test_the_goal_cell_is_not_in_the_denominator(corridor):
+    """REGRESSION TEST. Do not delete.
+
+    `train.py` records the agent's position at the top of each step and resets in
+    the same iteration the episode ends, so the goal cell is never logged -- in
+    any direction. Counting its 4 states in the denominator capped raw coverage
+    at 1 - 1/reachable: 0.857 on DoorKey-5, 0.889 on Empty-5. Verified on the
+    pilot: goal_visits == 0 in all 16 runs, including two that solved Empty-5.
+
+    Here every cell a run CAN log is visited, so coverage must be exactly 1.0.
+    """
+    counts = np.zeros((1, 7, 3, 4), dtype=np.int32)
+    counts[0, 1:5, 1, :] = 3         # everything except the goal at (5, 1)
+    assert raw_coverage(counts, corridor)[0] == 1.0
+    assert task_relevant_coverage(counts, corridor)[0] == 1.0
+
+
+def test_a_visit_recorded_at_the_goal_cannot_push_coverage_above_one(corridor):
+    """The goal leaves the numerator as well as the denominator, so a count
+    there -- which a fixture or a future logger change could produce -- cannot
+    make a fraction exceed 1.0."""
+    counts = np.zeros((1, 7, 3, 4), dtype=np.int32)
+    counts[0, 1:6, 1, :] = 3         # the goal included this time
+    assert raw_coverage(counts, corridor)[0] == 1.0
+
+
+def test_the_goal_stays_task_relevant_even_though_it_is_not_measured(corridor):
+    """Only the measurement is blind to the goal. The mask still describes the
+    task, and the report's denominator table is read off it."""
+    assert task_relevant_mask(corridor)[corridor.goal]
+
+
 def test_early_auc_of_a_flat_curve_equals_its_level():
     steps = np.arange(0, 100_000, 10_000)
     assert np.isclose(early_auc(steps, np.full(len(steps), 0.5), 100_000, frac=0.2), 0.5)
@@ -123,6 +156,34 @@ def test_early_auc_refuses_a_single_point_in_the_window():
     steps = np.array([10_000, 50_000, 90_000])
     with pytest.raises(ValueError, match="snapshot_every"):
         early_auc(steps, np.array([0.1, 0.5, 0.9]), total_steps=100_000, frac=0.2)
+
+
+def test_early_auc_refuses_a_grid_that_stops_short_of_the_window_edge():
+    """The integral runs to the last snapshot inside the window but is divided by
+    the whole window. A grid of 30_000 against an 80_000 window stops at 60_000,
+    so the result reads 25% low -- and, before this guard, silently.
+
+    Two points fall inside, so the older "needs 2 points" check passes it.
+    """
+    steps = np.arange(30_000, 400_001, 30_000)
+    coverage = np.full(len(steps), 0.5)
+    with pytest.raises(ValueError, match="25% low"):
+        early_auc(steps, coverage, total_steps=400_000, frac=0.2)
+
+
+def test_the_real_snapshot_grid_covers_its_window_exactly():
+    """400_000 steps at snapshot_every=10_000: the window is 80_000 and the
+    eighth snapshot lands exactly on it, so the guard never binds on the settings
+    the sweep actually runs.
+
+    Checked on a linear ramp, where the trapezoid rule is exact and the answer is
+    known: coverage rising 0 -> 1 over 400_000 steps has mean 0.1 over the first
+    fifth. A flat curve would NOT give its own level here -- prepending the
+    origin costs half of the first interval -- which is the documented and
+    deliberate 0.2% price of integrating from 0.
+    """
+    steps = np.arange(10_000, 400_001, 10_000)
+    assert np.isclose(early_auc(steps, steps / 400_000, 400_000), 0.1)
 
 
 def test_faster_exploration_gives_a_larger_auc():

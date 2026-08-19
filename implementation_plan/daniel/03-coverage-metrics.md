@@ -1,5 +1,30 @@
 # Task 3 — Coverage metrics
 
+> **AMENDED 2026-08-19 by the tasks 1-6 review. Two things below are SUPERSEDED
+> -- read `src/rlx/analysis/coverage.py`, not this file.**
+>
+> - **The goal cell is no longer in either coverage denominator.** `train.py`
+>   records the agent's position at the TOP of each step and resets in the same
+>   iteration the episode ends, so the position the agent holds when it steps onto
+>   the goal is never logged, in any of the 4 directions. Verified on the pilot:
+>   `goal_visits == 0` in all 16 runs, including two that solved Empty-5 with a
+>   return of 0.955. Counting those 4 states capped coverage at `1 - 1/reachable`:
+>   **0.857 on DoorKey-5, 0.889 on Empty-5**, 0.995 on Empty-16. The cap is a
+>   constant per run, so no correlation moved -- but every coverage LEVEL in the
+>   report was too low and "1.0" did not mean "saw everything". `_loggable()`
+>   drops the goal from numerator and denominator alike. `task_relevant_mask`
+>   still contains the goal: it is task-relevant by definition, and only the
+>   measurement is blind to it.
+> - **`early_auc` also refuses a snapshot grid that stops short of the window.**
+>   The old guard required 2 points inside the window but not that they reached
+>   its edge, while the result is divided by the FULL window -- a grid of 30_000
+>   against an 80_000 window integrates to 60_000 and reads 25% low, silently.
+>   `MIN_WINDOW_COVERED = 0.9`. It never binds at 400_000 / 10_000, where the
+>   eighth snapshot lands exactly on 80_000.
+>
+> Reasoning: `docs/decision_log.md`, "The goal square was in the denominator and
+> could never be reached".
+
 > **AMENDED 2026-08-19 by the tasks 1-4 review. The `early_auc` code below is
 > SUPERSEDED — do not copy it.** It divided the integral by the span of the
 > snapshots that happened to fall inside the window

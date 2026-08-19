@@ -182,6 +182,12 @@ the door is locked.
 that is not a wall), times 4 directions. This is the denominator for coverage. We
 compute it with a breadth-first search.
 
+The goal square is the one exception: it is left out of the denominator. We write
+the agent's position down at the start of each step and let it move afterwards,
+and stepping onto the goal ends the maze immediately, so the square the agent
+wins on is never recorded. Leaving it in meant coverage could never pass 0.889 on
+Empty-5 no matter how thoroughly an agent explored.
+
 **Breadth-first search (BFS)** — a standard algorithm for exploring a maze layout
 outward from a starting point, level by level. We use it for two things: finding
 which cells are reachable, and computing how far every cell is from the goal.
