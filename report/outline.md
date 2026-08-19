@@ -42,10 +42,16 @@ Numbers: the header block of `report/results.md` (runs analysed, instances,
 strategies, seeds per configuration).
 
 ## 5. Coverage measurement  [Daniel]
-Raw vs task-relevant coverage, early-coverage AUC over the first 25% of the step
-budget. **State explicitly that (x, y, direction) is privileged information used
-only for analysis, never by any agent.** Explain why the count-based bonus counts
-the agent's own observations instead.
+Raw vs task-relevant coverage, early-coverage AUC over the first **20%** of the
+step budget (`frac=0.2` in `coverage.early_auc`, spec §6.4 — this said 25% until
+2026-08-19 and was simply wrong). **State explicitly that (x, y, direction) is
+privileged information used only for analysis, never by any agent.** Explain why
+the count-based bonus counts the agent's own observations instead.
+
+Say plainly that the goal square is excluded from the coverage denominator: the
+training loop writes the agent's position down before it moves, and the episode
+ends the instant the agent steps on the goal, so no run can ever record a visit
+there. Including it would have capped coverage at 0.857 on DoorKey-5.
 
 ## 6. Results  [Daniel]
 ### 6.1 Which strategy wins    -> fig1, fig5
@@ -70,6 +76,21 @@ identical in a 7x7x3 view, so they share a count). Pinned layouts mean we study
 single-maze exploration, not generalisation. One DQN variant. Fixed
 hyperparameters, not tuned per strategy. Fixed step budget means hard instances
 may be budget-limited rather than genuinely unsolvable.
+
+Two limitations of the coverage measure itself, both of which `report/results.md`
+now states in the place where the affected number is printed:
+
+- **On the smallest instances the measure runs out of room.** Empty-5 has 9
+  walkable squares; every strategy has seen all of them within the first
+  thousand steps, so early coverage is the same number for all four and can
+  predict nothing there. Not a bug — the maze is too small for the question.
+- **On the whole Empty family, H2 cannot be tested at all.** Raw and
+  task-relevant coverage are identical for every run: start and goal sit in
+  opposite corners of an open box, so every reachable square lies on some
+  shortest route and the two masks are the same. 3 of the 13 instances therefore
+  contribute no evidence about H2 and pull the two correlations together. The
+  DoorKey instances are where the distinction does real work (mask ratios 0.81,
+  0.65 and 0.47 on DoorKey-7/8/10).
 
 ## 9. Conclusion  [Samuel]
 
