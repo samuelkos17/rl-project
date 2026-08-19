@@ -2464,8 +2464,28 @@ now existed only as functions nobody called outside a figure.
 **How we know it works:** run against the 260 fake runs it produces a 500-line
 file with no empty section and no missing number, and against a deliberately
 broken copy — one maze where every run was forced to score zero — it reports the
-missing correlation as `NaN` and carries on instead of crashing. `pytest -q`:
-229 passed.
+missing correlation as `NaN` and carries on instead of crashing. It also runs
+against the real pilot results, which is where the two bugs below turned up.
+`pytest -q`: **233 passed**.
+
+**Two bugs, both caught by re-checking before the PR, both on real data:**
+
+1. **The winners table named a winner where there was none.** It ranked
+   strategies by their *mean*, and picked the first row after sorting. On the
+   pilot that printed "boltzmann" as the best strategy on DoorKey-5 — a maze
+   where all four strategies scored exactly 0.0 and nothing ever reached the
+   goal. On Empty-5 it printed epsilon-greedy, where epsilon-greedy and
+   NoisyNets had scored *exactly* the same. Both are ordering artefacts, and
+   both would have been written into the report as results.
+
+   Fixed: the table ranks by IQM (the same statistic as the rank-stability
+   table, so the two cannot contradict each other), names every tied strategy
+   instead of one of them, and says "no strategy ever reached the goal" when
+   the best score is zero.
+
+2. **A missing run would have been discovered two minutes in.** The generator
+   now refuses an incomplete run matrix before it computes anything, the same
+   way the figures do.
 
 **What has not happened yet:** the real numbers. Steps 7 to 9 of the task (run
 both commands against the real results, read them, and write down what they

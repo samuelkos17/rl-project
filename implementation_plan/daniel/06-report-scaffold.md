@@ -36,9 +36,16 @@
 > - NaN prints as `NaN`, not as `+nan`.
 > - Empty results raise `ValueError("no runs found under ...")`, matching
 >   `make_all_figures`, not `SystemExit`.
-> - Step 4's smoke test grew into six tests at the end of `tests/test_figures.py`,
+> - The winners table ranks by **IQM, not mean** (spec 7.4), names every tied
+>   strategy, and prints "no strategy ever reached the goal" when the best IQM
+>   is 0.0. Ranking by mean and taking the first row after sorting named a
+>   winner on both pilot instances where there was none.
+> - `build_report` runs the `_score_matrices` pre-flight before computing
+>   anything, like `make_all_figures`.
+> - Step 4's smoke test grew into ten tests at the end of `tests/test_figures.py`,
 >   including a fixture that forces one instance to a tied score of 0.0 -- the
->   shape the hard end of each family is expected to produce.
+>   shape the hard end of each family is expected to produce -- and two unit
+>   tests on the winners table built from the pilot's real tie.
 
 The last two days are for writing, not for hunting numbers in CSV files. This
 task builds the outline and generates a results file with every number already

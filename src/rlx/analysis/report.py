@@ -15,9 +15,10 @@ import pandas as pd
 
 from rlx.analysis.aggregate import load_all
 from rlx.analysis.stats import (
-    aggregate_correlation, build_analysis_table, compare_coverage_predictors,
-    iqm_by_strategy, performance_profile, probability_of_improvement,
-    rank_stability, rliable_aggregate, within_instance_correlation,
+    _iqm, _score_matrices, aggregate_correlation, build_analysis_table,
+    compare_coverage_predictors, iqm_by_strategy, performance_profile,
+    probability_of_improvement, rank_stability, rliable_aggregate,
+    within_instance_correlation,
 )
 
 #: (column in the analysis table, the name the report gives it).
@@ -78,10 +79,12 @@ def _h1_section(df: pd.DataFrame) -> str:
             # can still print "excludes zero". Say so where the number is, not
             # in a footnote nobody reads.
             lines += [
-                f"> **Do not quote that CI.** It resamples {agg['n_instances']} "
-                "per-instance correlation(s), so it says nothing about the "
-                "spread. The honest headline when this happens is that almost "
-                "every run scored the same and there was nothing to correlate.",
+                "> **Do not quote that CI.** It resamples "
+                + ("a single per-instance correlation" if agg["n_instances"] == 1
+                   else f"{agg['n_instances']} per-instance correlations")
+                + ", so it says nothing about the spread. The honest headline "
+                "when this happens is that almost every run scored the same and "
+                "there was nothing left to correlate.",
                 "",
             ]
         lines += [
@@ -183,18 +186,63 @@ def _improvement_section(df: pd.DataFrame) -> str:
     return "\n".join(blocks)
 
 
+def _winners_section(df: pd.DataFrame) -> str:
+    """The best strategy per instance, ranked by IQM, with ties named as ties.
+
+    Two traps this table used to fall into, both of which the pilot run
+    reproduces:
+
+    * Ranking by the MEAN. Spec 7.4 ranks strategies by IQM, and so does
+      `rank_stability`, so a mean-ranked winners table could contradict the
+      table printed directly above it.
+    * Picking one name out of an exact tie. On the pilot, all four strategies
+      score exactly 0.0 on DoorKey-5, and epsilon-greedy and NoisyNets score
+      exactly 0.23875 on Empty-5. Sorting and taking the first row named a
+      winner in both cases -- an ordering artefact that would have been written
+      into the report as a result.
+    """
+    rows = []
+    for env_id, group in df.groupby("env_id", sort=True):
+        iqm = group.groupby("strategy")["final_return"].apply(
+            lambda v: _iqm(v.to_numpy()))
+        best = float(iqm.max())
+        # Exact equality on purpose: these are ties because the numbers are
+        # identical, not because they are close. Two strategies that merely sit
+        # near each other are separated by their CIs, not by this column.
+        tied = sorted(iqm.index[iqm == best])
+        rows.append({
+            "env_id": env_id,
+            "best_strategy": ("none -- no strategy ever reached the goal"
+                              if best <= 0.0 else " = ".join(tied)),
+            "iqm": round(best, 3),
+            "tied_strategies": len(tied),
+        })
+    return "\n".join([
+        "## Best strategy per instance", "",
+        "Ranked by IQM, the same statistic as the rank-stability table, so the",
+        "two cannot contradict each other. An instance nothing solved has no",
+        "winner and says so; strategies with an identical IQM are all named.",
+        "Before calling any of these a win, check whether the CIs in the IQM",
+        "table above actually separate it from the runner-up.", "",
+        pd.DataFrame(rows).to_markdown(index=False), "",
+    ])
+
+
 def build_report(results_root: Path, out_path: Path) -> None:
-    """Write every number the report needs to `out_path` as one markdown file."""
+    """Write every number the report needs to `out_path` as one markdown file.
+
+    Refuses two inputs rather than producing a file that looks generated:
+    an empty results tree, and a run matrix with a hole in it (some strategy
+    missing a seed on some instance). Nothing is written in either case.
+    """
     runs = load_all(Path(results_root))
     if not runs:
         raise ValueError(f"no runs found under {results_root}")
     df = build_analysis_table(runs)
-
-    winners = (df.groupby(["env_id", "strategy"])["final_return"].mean()
-                 .reset_index()
-                 .sort_values("final_return", ascending=False)
-                 .groupby("env_id").first()
-                 .reset_index()[["env_id", "strategy", "final_return"]])
+    # Same pre-flight as make_all_figures: rliable needs a complete
+    # (seeds x instances) matrix, and the message that says which run is missing
+    # is worth more at the start than after two minutes of bootstrapping.
+    _score_matrices(df)
 
     # Everything is built before anything is written: a failure halfway through
     # must not leave a half-written results file that still looks generated.
@@ -215,8 +263,7 @@ def build_report(results_root: Path, out_path: Path) -> None:
         "ranking on the easiest instance of the same family. 1.0 is the same\n"
         "order, -1.0 exactly reversed, 0 unrelated.\n",
         rank_stability(df).round(3).to_markdown(index=False) + "\n",
-        "## Best strategy per instance\n",
-        winners.round(3).to_markdown(index=False) + "\n",
+        _winners_section(df),
         "## Full per-run table\n",
         df.round(4).to_markdown(index=False) + "\n",
     ]

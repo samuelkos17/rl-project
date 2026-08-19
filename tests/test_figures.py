@@ -238,3 +238,68 @@ def test_an_empty_results_directory_is_refused_by_the_report(tmp_path):
     with pytest.raises(ValueError, match="no runs"):
         build_report(tmp_path, tmp_path / "results.md")
     assert not (tmp_path / "results.md").exists()
+
+
+def test_no_winner_is_named_on_an_instance_nothing_solved(one_tied_instance, tmp_path):
+    """Every strategy scoring exactly 0.0 is a four-way tie, not a win. Sorting
+    and taking the first row named one of them anyway -- on the pilot that put
+    "boltzmann" in the winners column of DoorKey-5, which nothing solved."""
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(one_tied_instance, out)
+    text = out.read_text(encoding="utf-8")
+    # The winners section only -- "| Empty-5" also starts rows of the per-run
+    # table further down, which is not what this test is about.
+    section = text.split("## Best strategy per instance")[1].split("\n## ")[0]
+    line = [l for l in section.splitlines() if l.startswith("| Empty-5 ")][0]
+    assert "no strategy ever reached the goal" in line, line
+
+
+def test_an_exact_tie_names_every_tied_strategy():
+    """Not hypothetical: on the pilot, epsilon-greedy and NoisyNets both scored
+    exactly 0.23875 on Empty-5 from completely different per-seed returns."""
+    import pandas as pd
+    from rlx.analysis.report import _winners_section
+
+    df = pd.DataFrame({
+        "env_id": ["Empty-5"] * 4,
+        "strategy": ["epsilon_greedy", "epsilon_greedy", "noisy", "noisy"],
+        "final_return": [0.23875, 0.23875, 0.4775, 0.0],
+    })
+    assert "epsilon_greedy = noisy" in _winners_section(df)
+
+
+def test_the_winner_is_ranked_by_iqm_not_by_mean():
+    """Spec 7.4 ranks by IQM, and so does the rank-stability table. Ranking the
+    winners table by mean instead lets the two tables name different winners on
+    the same instance: here one collapsed seed drags count-based's mean below
+    Boltzmann's while its IQM stays above."""
+    import pandas as pd
+    from rlx.analysis.report import _winners_section
+
+    df = pd.DataFrame({
+        "env_id": ["DoorKey-8"] * 10,
+        "strategy": ["count_based"] * 5 + ["boltzmann"] * 5,
+        "final_return": [1.0, 1.0, 1.0, 1.0, 0.0] + [0.9] * 5,
+    })
+    assert df.groupby("strategy")["final_return"].mean().idxmax() == "boltzmann"
+    assert "count_based" in _winners_section(df)
+    assert "boltzmann" not in _winners_section(df)
+
+
+def test_the_report_refuses_an_incomplete_run_matrix_before_writing(synthetic, tmp_path):
+    """Same rule as the figures: a crashed run must not become a quiet blank in
+    the results file, and the message that names it is worth more before two
+    minutes of bootstrapping than after."""
+    from rlx.analysis.report import build_report
+
+    incomplete = tmp_path / "runs"
+    shutil.copytree(synthetic, incomplete)
+    shutil.rmtree(incomplete / "DoorKey-8" / "noisy" / "seed3")
+    out = tmp_path / "results.md"
+
+    with pytest.raises(ValueError, match="missing"):
+        build_report(incomplete, out)
+
+    assert not out.exists(), "a refused report must leave no half-written file"
