@@ -20,6 +20,33 @@
 > `within_instance_correlation` now returns — `per.to_markdown()` picks them up
 > automatically.
 
+> **BUILT 2026-08-19 on branch `analysis/report-scaffold`. Steps 1-5 are done;
+> steps 7-9 wait for the real results on 2026-08-22.** The file that was written
+> is `src/rlx/analysis/report.py` -- read it, not the draft below, which it has
+> grown past. What it adds over the draft:
+>
+> - Spec 7.2 wants performance profiles and probability of improvement, and
+>   nothing outside `fig5` printed them. `results.md` now has both. Probability
+>   of improvement is reported **per family**, never pooled across families.
+> - Aggregate IQM across all instances (`rliable_aggregate`) sits above the
+>   per-instance IQM table.
+> - When fewer than 3 instances have usable variance, the CI on the mean rho is
+>   printed with a "do not quote this" warning next to it: it resamples 1-2
+>   numbers and can still report `ci_excludes_zero: True`.
+> - NaN prints as `NaN`, not as `+nan`.
+> - Empty results raise `ValueError("no runs found under ...")`, matching
+>   `make_all_figures`, not `SystemExit`.
+> - The winners table ranks by **IQM, not mean** (spec 7.4), names every tied
+>   strategy, and prints "no strategy ever reached the goal" when the best IQM
+>   is 0.0. Ranking by mean and taking the first row after sorting named a
+>   winner on both pilot instances where there was none.
+> - `build_report` runs the `_score_matrices` pre-flight before computing
+>   anything, like `make_all_figures`.
+> - Step 4's smoke test grew into ten tests at the end of `tests/test_figures.py`,
+>   including a fixture that forces one instance to a tied score of 0.0 -- the
+>   shape the hard end of each family is expected to produce -- and two unit
+>   tests on the winners table built from the pilot's real tie.
+
 The last two days are for writing, not for hunting numbers in CSV files. This
 task builds the outline and generates a results file with every number already
 in it, so writing becomes filling in prose.
@@ -35,7 +62,7 @@ in it, so writing becomes filling in prose.
 
 ---
 
-- [ ] **Step 1: Write `report/outline.md`**
+- [x] **Step 1: Write `report/outline.md`**
 
 The structure, with each section noting which figure and which numbers it uses,
 and who writes it.
@@ -92,7 +119,7 @@ may be budget-limited rather than genuinely unsolvable.
 ## Appendix: full results table  -> report/results.md
 ```
 
-- [ ] **Step 2: Write `src/rlx/analysis/report.py`**
+- [x] **Step 2: Write `src/rlx/analysis/report.py`**
 
 ```python
 """Generate report/results.md with every number the report needs.
@@ -192,7 +219,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 3: Test it on synthetic data**
+- [x] **Step 3: Test it on synthetic data**
 
 ```bash
 python -m rlx.analysis.report --results results_synthetic --out scratch/results.md
@@ -206,7 +233,7 @@ Then read `scratch/results.md` end to end. Every table should be populated, no
 instance where every run scored zero — that is the no-variance case, and the
 report should say so rather than hide it.
 
-- [ ] **Step 4: Add a smoke test**
+- [x] **Step 4: Add a smoke test**
 
 Append to `tests/test_figures.py`:
 
@@ -227,7 +254,7 @@ def test_report_generation_produces_every_section(synthetic, tmp_path):
 pytest tests/test_figures.py -v
 ```
 
-- [ ] **Step 5: Create the sections directory**
+- [x] **Step 5: Create the sections directory**
 
 ```bash
 mkdir -p report/sections

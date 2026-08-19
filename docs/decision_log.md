@@ -2402,3 +2402,92 @@ measure runs out of room before the early window closes, so it has no
 discriminating power there, and the hypothesis can only be tested where the maze
 is big enough for strategies to differ. Nothing about the other twelve instances
 changes.
+
+---
+
+## 2026-08-19 — The report now has an outline, and every number it needs is generated
+
+**Status:** Active
+
+**What changed:** two new things, plus a place for Max to write.
+
+- `report/outline.md` — the section-by-section structure of the report, with the
+  owner of each section and, for every section, which figure and which numbers it
+  uses.
+- `src/rlx/analysis/report.py` — one command that reads the results directory and
+  writes `report/results.md`, a single file containing every number the report
+  quotes: both hypothesis verdicts, the per-instance correlations, IQM scores,
+  performance profiles, probability of improvement, rank stability, the winner
+  per maze, and the full per-run table.
+- `report/sections/` — one file per hand-written section, so the three of us can
+  write at the same time without editing the same file. Max's
+  `03-strategies.md` goes here.
+
+```bash
+python -m rlx.analysis.report --results results --out report/results.md
+```
+
+**Why:** the last two days before the deadline are for writing sentences, not for
+opening CSV files and hunting for a number. The rule that follows from this is
+short: **never retype a number into the report — copy it out of
+`report/results.md`.** A number typed from memory is a number that can drift away
+from the data without anyone noticing.
+
+**Three decisions inside it worth knowing about:**
+
+1. **The file states the verdicts, it does not leave them to the eye.** Our first
+   hypothesis needs *two* things to be true at once — the confidence interval has
+   to exclude zero *and* the effect has to get stronger on harder mazes — and the
+   second hypothesis needs the task-relevant correlation to be both larger *and*
+   separated from the raw one by non-overlapping intervals. Printing the
+   ingredients and letting a reader eyeball the conclusion is exactly how a
+   report ends up claiming something the data does not say. Both verdicts are
+   computed and printed as `True` or `False`.
+
+2. **A confidence interval built from fewer than three mazes is marked
+   unquotable.** If nearly every run scores the same, only one or two mazes have
+   anything left to correlate, and the interval is then built by resampling one
+   or two numbers. It still prints, and it can still say "excludes zero" — which
+   would look like a confirmed result and would not be one. When that happens the
+   file now prints a warning right next to the number instead of a footnote.
+
+3. **Probability of improvement is reported per family, never pooled.** Mixing
+   Empty with MultiRoom would average over two very different tasks and hide
+   exactly the difficulty effect we are trying to measure.
+
+**What it means for the results:** nothing changes numerically. This is a
+presentation layer over the statistics we already had — it recomputes nothing and
+decides nothing. Two things it *adds* to what we can see: performance profiles
+and probability of improvement were required by the design (spec §7.2) and until
+now existed only as functions nobody called outside a figure.
+
+**How we know it works:** run against the 260 fake runs it produces a 500-line
+file with no empty section and no missing number, and against a deliberately
+broken copy — one maze where every run was forced to score zero — it reports the
+missing correlation as `NaN` and carries on instead of crashing. It also runs
+against the real pilot results, which is where the two bugs below turned up.
+`pytest -q`: **233 passed**.
+
+**Two bugs, both caught by re-checking before the PR, both on real data:**
+
+1. **The winners table named a winner where there was none.** It ranked
+   strategies by their *mean*, and picked the first row after sorting. On the
+   pilot that printed "boltzmann" as the best strategy on DoorKey-5 — a maze
+   where all four strategies scored exactly 0.0 and nothing ever reached the
+   goal. On Empty-5 it printed epsilon-greedy, where epsilon-greedy and
+   NoisyNets had scored *exactly* the same. Both are ordering artefacts, and
+   both would have been written into the report as results.
+
+   Fixed: the table ranks by IQM (the same statistic as the rank-stability
+   table, so the two cannot contradict each other), names every tied strategy
+   instead of one of them, and says "no strategy ever reached the goal" when
+   the best score is zero.
+
+2. **A missing run would have been discovered two minutes in.** The generator
+   now refuses an incomplete run matrix before it computes anything, the same
+   way the figures do.
+
+**What has not happened yet:** the real numbers. Steps 7 to 9 of the task (run
+both commands against the real results, read them, and write down what they
+showed) are for 2026-08-22, after the sweep. The section of this log that
+records what the experiment actually found is still unwritten, on purpose.
