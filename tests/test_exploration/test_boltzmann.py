@@ -47,24 +47,48 @@ def test_better_actions_are_sampled_more_often_than_worse_ones(cfg, rng, q_value
     assert counts[5] > counts[4]
 
 
-def test_configured_schedule_explores_then_commits_at_realistic_q_gaps(cfg, rng, key):
-    """Regression test for the bug that made Boltzmann uniform-random.
+# Real Q-values from a freshly initialised QNetwork on the Empty-5 first
+# observation (torch seed 41), shifted so the smallest is 0 -- a constant shift
+# is a no-op for softmax. Its best-vs-second gap is 0.0208, matching the measured
+# init-scale mean of 0.0206 over 6 instances x 15 seeds.
+Q_INIT = np.array([0.1839, 0.0729, 0.0585, 0.2014, 0.2363, 0.2156, 0.0])
+# The same vector rescaled to the measured TRAINED gap, 0.0030 (6 instances x
+# 2 seeds x 160k steps). The Q-scale shrinks ~7x over a run, which is why the
+# two ends of the tau schedule must be checked against different arrays.
+Q_TRAINED = Q_INIT * (0.0030 / 0.02076)
+BEST = 4  # argmax of both
 
-    tau only means anything relative to the size of Q differences. With
-    tau_end=0.05 against real gaps of ~0.003, Boltzmann picked its favourite
-    action 15% of the time versus 14.3% for a coin flip -- it never exploited,
-    for the entire run, and no test noticed. These Q-values are the measured
-    scale (gap 0.0034, spread 0.0206); see docs/decision_log.md.
+
+def test_configured_schedule_explores_early_and_commits_late(cfg, rng, key):
+    """Regression test for BOTH ways the tau schedule has been mis-scaled.
+
+    tau only means anything relative to the size of Q differences, and that
+    size is not constant: a random network spreads its Q-values ~7x wider than
+    a trained one. Each end of the schedule is therefore checked against the
+    scale that is actually present when that end is in force.
+
+    Two real bugs this rejects, both shipped, neither caught by the tests that
+    existed at the time:
+      tau_end=0.05   -> p(best) 0.15 vs 0.143 for a coin flip. Boltzmann was
+                        uniform-random for all 400k steps, on every instance.
+      tau_start=0.01 -> p(best) 0.86 at step 0. Boltzmann committed to a
+                        randomly initialised preference and never left; the
+                        pilot showed it visiting 4 of ~36 states on Empty-5,
+                        i.e. spinning in place for 20k steps.
+    See docs/decision_log.md.
     """
-    q = np.array([0.0, 0.004, 0.002, 0.0206, 0.001, 0.017, 0.010])
-    uniform = 1.0 / len(q)
+    uniform = 1.0 / len(Q_INIT)
     b = Boltzmann(cfg, rng)
 
-    p_start = b.probabilities(q, b.temperature(0))[3]
-    p_end = b.probabilities(q, b.temperature(cfg.total_steps))[3]
+    p_start = b.probabilities(Q_INIT, b.temperature(0))[BEST]
+    p_end = b.probabilities(Q_TRAINED, b.temperature(cfg.total_steps))[BEST]
 
-    assert p_start > 1.5 * uniform, f"starts indistinguishable from random: {p_start:.3f}"
-    assert p_end > 0.8, f"never commits to its favourite action: {p_end:.3f}"
+    # Early: better than a coin flip -- that is Boltzmann's whole claim over
+    # epsilon-greedy -- but nowhere near committed.
+    assert p_start > uniform, f"starts indistinguishable from random: {p_start:.3f}"
+    assert p_start < 0.5, f"already committed at step 0: {p_start:.3f}"
+    # Late: actually exploits what it learned.
+    assert p_end > 0.9, f"never commits to its favourite action: {p_end:.3f}"
     assert p_end > p_start, "must become greedier over training, not less"
 
 

@@ -2111,3 +2111,171 @@ run. There is now a test using the *measured* score differences that fails if th
 schedule does not start meaningfully above random and finish meaningfully
 decisive. Checked both ways: it fails on the old values (finishing at 18.2%) and
 passes on the new ones (97.3%).
+
+---
+
+## 2026-08-19 — The pilot run caught that we had over-corrected Boltzmann, and one number moves again
+
+**Status:** Active
+
+**Short version:** We ran the 16-run pilot. It did its job: it found a real bug.
+The temperature fix from earlier today fixed one end of the schedule and broke
+the other. One number, `tau_start`, moves from 0.01 to 0.1. Nothing else changes.
+
+### What the pilot showed
+
+All 16 runs finished and wrote every file they were supposed to. The pipeline
+works end to end. But Boltzmann was visiting **4 of about 36 possible positions**
+on Empty-5 — a 5x5 empty room. Four positions means one square, facing four
+directions. It stood still and turned on the spot for 20,000 steps.
+
+Our earlier entry today said Boltzmann's temperature was 500x too high and it
+never stopped behaving randomly. That was true. The fix went too far the other
+way: it now behaved *decisively* from the very first step, before it had learned
+anything at all, so it locked onto a preference that came out of the random
+numbers the network was created with and never had a reason to reconsider.
+
+### Why we got it wrong, in one sentence
+
+We measured how far apart the agent's action scores are *after* it has trained,
+and used that one number to set both ends of the schedule — but the scores are
+about **7 times further apart at the start of training than at the end**, so the
+start of the schedule was calibrated against the wrong ruler.
+
+Measured, on a brand-new untrained network:
+
+| when | typical gap between the best and second-best action |
+|---|---|
+| brand-new network, before any training | 0.0206 |
+| after training | 0.0030 |
+
+The 0.0206 figure is the average over 6 different mazes with 15 different random
+starts each, and it barely moves between mazes (all six sit between 0.0200 and
+0.0222). That is because it is a property of how the network is built, not of the
+maze — which is convenient, because it means one number is right everywhere.
+
+### What that does to the agent's behaviour
+
+"Chance of picking its current favourite action" — 14.3% would be a coin flip
+between the 7 actions, 100% would be no exploration at all:
+
+| temperature setting | at the first step | at the last step |
+|---|---|---|
+| original (1.0 -> 0.05) | 14.5% — random | 18.4% — still basically random |
+| this morning's fix (0.01 -> 0.001) | **86.1% — already decided** | 94.6% |
+| **new (0.1 -> 0.001)** | **28.0% — favours the better actions, but keeps looking** | 94.6% |
+
+28% is the number we want at the start. It is meaningfully above a coin flip,
+which is Boltzmann's entire selling point over epsilon-greedy — when it explores,
+it leans toward actions it rates highly rather than picking uniformly at random.
+But it is nowhere near committed.
+
+### We checked this by re-running, not by trusting the arithmetic
+
+We re-ran the four Boltzmann pilot runs with the new value:
+
+| run | positions visited, old | positions visited, new |
+|---|---|---|
+| Empty-5 seed 0 | 32 | 32 |
+| Empty-5 seed 1 | **4** | **32** |
+| DoorKey-5 seed 0 | **4** | **24** |
+| DoorKey-5 seed 1 | **4** | **24** |
+
+The standing-still behaviour is gone, and Boltzmann now explores about as much as
+the other three strategies do.
+
+### Are we allowed to change a number we said was frozen?
+
+This is the uncomfortable part, so it gets stated plainly rather than buried.
+
+Earlier today we wrote "these values are now frozen — changing any of them after
+the sweep would mean picking our result after seeing it." We are changing one.
+Three things make us think this is honest rather than convenient:
+
+1. **The sweep has not been run.** The pilot is a 20,000-step pipeline check, 5%
+   of the real budget. It exists precisely to catch this kind of thing.
+2. **We fixed a strategy that was broken, not one that was losing.** Standing on
+   one square for an entire run is not a weak result, it is a non-functioning
+   strategy. If we had left it in, the report's finding would have been an
+   artefact of our own bug.
+3. **The score was 0.000 in both versions.** This is the important one. Every
+   Boltzmann pilot run scored zero before the change and zero after it. We chose
+   the new value by looking at *how much of the maze got visited*, and the number
+   we are actually trying to measure did not move at all. So it is not possible
+   that we picked this value because it made Boltzmann look better — there was
+   no "better" visible.
+
+What we are giving up is that this is the second correction today, and each one
+costs a little of the "we decided in advance" argument. **We are stating both
+corrections in the report rather than presenting the final numbers as if we had
+picked them first time.** The honest version — "we set these against a measured
+scale, got the reasoning wrong once, caught it with a pilot run, and here is what
+changed" — is a better story than a suspiciously clean one, and the professor's
+feedback asked us to be explicit about how schedules were chosen.
+
+**Now genuinely frozen.** The real sweep runs against these values.
+
+### The test that should have caught it, and now does
+
+We already had a test checking Boltzmann eventually becomes decisive. It only
+checked the *end* of the schedule, which is exactly why the new bug walked
+straight past it. It has been replaced with one that checks both ends, and — the
+important part — checks each end against the ruler that actually applies at that
+point: the untrained score gaps for the start, the trained ones for the end.
+
+It uses real action scores taken from an actual freshly-built network rather than
+numbers we made up, since made-up numbers on the wrong scale are what caused this
+in the first place.
+
+Verified it rejects both bugs rather than just passing on the new value:
+
+| values | result |
+|---|---|
+| original 1.0 -> 0.05 | **fails** — "never commits to its favourite action: 0.184" |
+| this morning's 0.01 -> 0.001 | **fails** — "already committed at step 0: 0.861" |
+| new 0.1 -> 0.001 | passes |
+
+Full suite: 220 passed.
+
+### Two things the pilot found that are NOT ours, passed to the others
+
+**1. For Samuel — the greedy score is 0 while the training score is 0.9.**
+
+On Empty-5, all four strategies reach a training score around 0.88-0.95, meaning
+the agent reaches the goal regularly while it is exploring. The evaluation score,
+which switches exploration off and just takes the best-rated action every time,
+is 0.000 for nearly all of them.
+
+In these mazes, reaching the goal *always* scores above 0.1. So a score of
+exactly 0 means the agent never reached the goal in that episode at all — it ran
+out of time. The agent solves the maze when it has a bit of randomness in it, and
+gets stuck when it does not. The likely reason is that with no randomness the
+agent can walk into a repeating cycle (turn, turn, turn, turn) with nothing to
+break it, whereas a single random action escapes.
+
+We do not think this is a broken evaluation — we read `evaluate()` and it does
+the right things (exploration off, no bonus, same maze). It is more likely that
+20,000 steps is simply not enough: that is only 5,000 learning updates, against
+100,000 in the real run. One run did reach 0.955 and hold it. **Flagging it so
+Samuel can decide whether to watch for it in the real sweep**, because if it is
+still happening at 400,000 steps, every strategy scores zero and we have no
+result at all.
+
+**2. For Daniel — the two coverage measures are identical on the pilot mazes.**
+
+"Raw coverage" (how much of the maze was visited) and "task-relevant coverage"
+(how much of the part that matters was visited) came out to exactly the same
+number on all 16 pilot runs. This is correct behaviour, not a bug: on the two
+smallest mazes the "part that matters" is the whole maze, so there is nothing to
+tell apart. On bigger mazes they separate properly — on MultiRoom-N2 the relevant
+part is 2% of the maze.
+
+One consequence worth putting in the report: for the **Empty** family the two
+measures are identical *at every size*, including Empty-16. In a room with no
+walls, every square lies on some shortest route from the start to the goal, so
+"the part that matters" is the entire room by definition. The task-relevant
+measure only adds information for DoorKey and MultiRoom.
+
+`early_auc`, the project's main predictor, computed a real number on all 16 runs
+with no failures — which is the specific thing the pilot's snapshot fix was
+meant to enable.
