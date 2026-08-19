@@ -139,3 +139,102 @@ def test_a_family_with_no_ranking_is_labelled_not_left_blank():
     assert "variance" in _degenerate_note(degenerate)
     assert _degenerate_note(partial) is None
     assert _degenerate_note(ranked) is None
+
+
+# --- report/results.md -------------------------------------------------------
+# Task 6's generator lives next to the figures because it reads the same results
+# tree through the same fixture, and building that tree twice costs more than
+# the two modules are worth separating.
+
+REPORT_HEADINGS = ("# Results", "H1 -- does early coverage", "H2 -- is task-relevant",
+                   "IQM final return", "Performance profiles",
+                   "Probability of improvement", "Rank stability",
+                   "Best strategy per instance", "Full per-run table")
+
+
+def test_report_generation_produces_every_section(synthetic, tmp_path):
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(synthetic, out)
+    text = out.read_text(encoding="utf-8")
+    for heading in REPORT_HEADINGS:
+        assert heading in text, heading
+    assert len(text) > 2_000
+
+
+def test_the_report_states_both_hypothesis_verdicts(synthetic, tmp_path):
+    """The verdicts must be computed, not left to the reader's eye. H1 needs the
+    CI to exclude zero AND the trend to be positive; H2 needs a larger
+    correlation AND non-overlapping CIs. Printing the ingredients without the
+    verdict is how a report ends up claiming the wrong one."""
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(synthetic, out)
+    text = out.read_text(encoding="utf-8")
+    assert "H1 confirmed (CI excludes zero AND trend positive)" in text
+    assert "H2 confirmed (larger AND non-overlapping CIs)" in text
+    assert "CI excludes zero: **" in text, "the half-criterion is reported separately"
+
+
+@pytest.fixture(scope="module")
+def one_tied_instance(synthetic, tmp_path_factory):
+    """Two instances of one family, one of which every run scored 0.0 on.
+
+    This is the shape the real sweep is expected to produce on the hard end of
+    each family, so the report has to survive it rather than crash on the NaN.
+    """
+    import pandas as pd
+
+    out = tmp_path_factory.mktemp("tied")
+    for name in ("Empty-5", "Empty-8"):
+        shutil.copytree(synthetic / name, out / name)
+    for metrics in (out / "Empty-5").glob("*/seed*/metrics.csv"):
+        df = pd.read_csv(metrics)
+        df.loc[df["eval_return_mean"].notna(), "eval_return_mean"] = 0.0
+        df.to_csv(metrics, index=False)
+    return out
+
+
+def test_an_instance_with_no_variance_is_reported_not_crashed_on(one_tied_instance, tmp_path):
+    """An instance where every run scored the same has no correlation to report.
+    That is a finding -- "nothing we tried solved this maze" -- and the file has
+    to say it. It must also not print a NaN as `+nan`."""
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(one_tied_instance, out)
+    text = out.read_text(encoding="utf-8")
+    for heading in REPORT_HEADINGS:
+        assert heading in text, heading
+    assert "Instances with usable variance: 1 of 2" in text
+    assert "+nan" not in text, "a missing number must read as NaN, not as +nan"
+
+
+def test_a_ci_over_too_few_instances_is_marked_unquotable(one_tied_instance, tmp_path):
+    """With one usable instance the bootstrap resamples a single number, so the
+    interval is degenerate and can still print "excludes zero: True". The
+    warning sits next to the number because that is where it gets read."""
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(one_tied_instance, out)
+    assert "Do not quote that CI" in out.read_text(encoding="utf-8")
+
+
+def test_the_report_command_line_entry_point_writes_the_file(synthetic, tmp_path):
+    """`python -m rlx.analysis.report` is what gets run on 22.08, so it is what
+    the test runs."""
+    out = tmp_path / "nested" / "results.md"
+    subprocess.run([sys.executable, "-m", "rlx.analysis.report",
+                    "--results", str(synthetic), "--out", str(out)], check=True)
+    assert out.exists()
+
+
+def test_an_empty_results_directory_is_refused_by_the_report(tmp_path):
+    from rlx.analysis.report import build_report
+
+    with pytest.raises(ValueError, match="no runs"):
+        build_report(tmp_path, tmp_path / "results.md")
+    assert not (tmp_path / "results.md").exists()

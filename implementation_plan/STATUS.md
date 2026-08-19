@@ -4,7 +4,7 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-19** (second update, after the tasks 1-4 review), by Daniel.
+Last updated: **2026-08-19** (third update, after Daniel's task 6), by Daniel.
 
 
 ---
@@ -15,7 +15,7 @@ Last updated: **2026-08-19** (second update, after the tasks 1-4 review), by Dan
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets, ✅ knob calibration (`tau_start` 0.1 after pilot) | — | 5 write-ups |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures | — | 6 report scaffold |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold | — | **all analysis tasks done**; on 22.08 run figures + report against the real results (task 6 steps 7-9) |
 
 
 ## What is available on `main` right now
@@ -48,6 +48,7 @@ Everything below is merged and safe to import.
 | `raw_coverage`, `task_relevant_coverage`, `task_relevant_mask`, `early_auc` | `rlx.analysis.coverage` | Daniel |
 | `build_analysis_table`, `within_instance_correlation`, `aggregate_correlation`, `compare_coverage_predictors`, `iqm_by_strategy`, `rank_stability`, `probability_of_improvement`, `rliable_aggregate`, `performance_profile` | `rlx.analysis.stats` | Daniel (figures), report |
 | `scripts/make_synthetic_results.py` (`--out`, `--no-effect`) | fake results in the real format | Daniel, anyone testing analysis |
+| `build_report`, `python -m rlx.analysis.report` | `rlx.analysis.report` | all three of us, on 22.08 |
 
 Settled by Daniel's task 2:
 - Analysis can be developed with **no real experiments**: the synthetic fixture
