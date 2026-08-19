@@ -64,8 +64,14 @@ def test_terminal_transitions_bootstrap_nothing():
 def test_double_dqn_target_differs_from_vanilla_max():
     """If these ever agree for a deliberately disagreeing pair of networks, the
     target is using target.max() and this is vanilla DQN, not Double DQN."""
-    agent = DoubleDQNAgent(n_actions=7, cfg=_cfg(), noisy=False)
+    # Seed BEFORE the networks are built. torch's default RNG is seeded from OS
+    # entropy, so with the seed below the constructor the weights differed every
+    # process, and roughly 1 run in 20 drew a pair whose argmaxes agreed on all
+    # 64 observations -- making the Double-DQN target equal the vanilla max and
+    # failing the assert below on correct code. Seeded here, the two disagree on
+    # all 64. (Daniel, 2026-08-19, from the tasks 1-6 review.)
     torch.manual_seed(1)
+    agent = DoubleDQNAgent(n_actions=7, cfg=_cfg(), noisy=False)
     with torch.no_grad():
         for p in agent.target.parameters():
             p.add_(torch.randn_like(p) * 0.5)   # push target away from online
