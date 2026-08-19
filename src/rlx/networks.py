@@ -1,10 +1,11 @@
 """The Q-network. One architecture, used by every strategy.
 
-NoisyLinear is a PLACEHOLDER here (it behaves exactly like nn.Linear). Max fills
-in the real factorised-Gaussian implementation in workstream B task 4. The class
-name, the constructor signature, and the reset_noise / noise_enabled members are
-the contract -- do not change them.
+NoisyLinear implements factorised Gaussian weight noise (workstream B task 4).
+The class name, the constructor signature, and the reset_noise / noise_enabled
+members are the contract -- do not change them.
 """
+
+import math
 
 import torch
 import torch.nn as nn
@@ -14,16 +15,57 @@ import torch.nn as nn
 OBS_SCALE = 10.0
 
 
-class NoisyLinear(nn.Linear):
-    """PLACEHOLDER -- currently a plain linear layer. Owned by Max (B task 4)."""
+class NoisyLinear(nn.Module):
+    """Linear layer with learned factorised Gaussian weight noise.
+
+    weight = weight_mu + weight_sigma * epsilon, with epsilon resampled by
+    reset_noise(). weight_sigma is learned, so the network decides for itself
+    how much randomness each weight still needs.
+    """
 
     def __init__(self, in_features: int, out_features: int, sigma0: float = 0.5):
-        super().__init__(in_features, out_features)
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
         self.sigma0 = sigma0
         self.noise_enabled = True
 
+        self.weight_mu = nn.Parameter(torch.empty(out_features, in_features))
+        self.weight_sigma = nn.Parameter(torch.empty(out_features, in_features))
+        self.bias_mu = nn.Parameter(torch.empty(out_features))
+        self.bias_sigma = nn.Parameter(torch.empty(out_features))
+
+        # Buffers, not parameters: noise is resampled, never learned.
+        self.register_buffer("weight_epsilon", torch.zeros(out_features, in_features))
+        self.register_buffer("bias_epsilon", torch.zeros(out_features))
+
+        bound = 1.0 / math.sqrt(in_features)
+        nn.init.uniform_(self.weight_mu, -bound, bound)
+        nn.init.uniform_(self.bias_mu, -bound, bound)
+        nn.init.constant_(self.weight_sigma, sigma0 * bound)
+        nn.init.constant_(self.bias_sigma, sigma0 * bound)
+
+        self.reset_noise()
+
+    @staticmethod
+    def _scaled_noise(size: int, device) -> torch.Tensor:
+        x = torch.randn(size, device=device)
+        return x.sign() * x.abs().sqrt()
+
     def reset_noise(self) -> None:
-        """Resample the noise. No-op until Max implements it."""
+        """Resample the factorised noise: one vector per input, one per output."""
+        device = self.weight_mu.device
+        eps_in = self._scaled_noise(self.in_features, device)
+        eps_out = self._scaled_noise(self.out_features, device)
+        self.weight_epsilon.copy_(eps_out.outer(eps_in))
+        self.bias_epsilon.copy_(eps_out)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.noise_enabled:
+            return nn.functional.linear(x, self.weight_mu, self.bias_mu)
+        weight = self.weight_mu + self.weight_sigma * self.weight_epsilon
+        bias = self.bias_mu + self.bias_sigma * self.bias_epsilon
+        return nn.functional.linear(x, weight, bias)
 
 
 class QNetwork(nn.Module):

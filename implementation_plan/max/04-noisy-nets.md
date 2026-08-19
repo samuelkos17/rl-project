@@ -62,7 +62,7 @@ Initialisation from the paper:
 
 ---
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_exploration/test_noisy.py`:
 
@@ -152,7 +152,7 @@ def test_explorer_adds_no_intrinsic_bonus(cfg, rng, key):
     assert NoisyExplorer(cfg, rng).intrinsic_bonus(key) == 0.0
 ```
 
-- [ ] **Step 2: Run and watch them fail**
+- [x] **Step 2: Run and watch them fail**
 
 ```bash
 pytest tests/test_exploration/test_noisy.py -v
@@ -161,7 +161,7 @@ pytest tests/test_exploration/test_noisy.py -v
 Expected: failures on `weight_mu` not existing (the placeholder is a plain
 `nn.Linear`) plus a `ModuleNotFoundError` for `rlx.exploration.noisy`.
 
-- [ ] **Step 3: Replace `NoisyLinear` in `src/rlx/networks.py`**
+- [x] **Step 3: Replace `NoisyLinear` in `src/rlx/networks.py`**
 
 Replace the placeholder class body. Leave the rest of the file alone.
 
@@ -223,7 +223,7 @@ Note `NoisyLinear` now subclasses `nn.Module`, not `nn.Linear`. `QNetwork`'s
 `isinstance(m, NoisyLinear)` checks still work, and the plain-`nn.Linear` branch
 is unaffected.
 
-- [ ] **Step 4: Write `src/rlx/exploration/noisy.py`**
+- [x] **Step 4: Write `src/rlx/exploration/noisy.py`**
 
 ```python
 """NoisyNets: exploration comes from learned weight noise inside the network,
@@ -263,7 +263,7 @@ action selection is resampled every step — which is what actually explores.
 **Put this in the report's limitations section.** Do not silently deviate from a
 cited paper; naming the deviation and the reason is what makes it defensible.
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 ```bash
 pytest tests/test_exploration/test_noisy.py -v
@@ -276,7 +276,7 @@ buffer instead of a `nn.Parameter` — that would mean the noise level never
 learns, which is the one thing that makes NoisyNets different from adding random
 jitter.
 
-- [ ] **Step 6: Run the whole exploration suite**
+- [x] **Step 6: Run the whole exploration suite**
 
 ```bash
 pytest tests/test_exploration/ -v
@@ -299,7 +299,7 @@ for s in STRATEGIES:
 
 Expected: four lines, `uses_noisy_net=True` on `noisy` only.
 
-- [ ] **Step 7: Tell Samuel**
+- [x] **Step 7: Tell Samuel**
 
 His `test_every_strategy_runs_end_to_end` was marked `xfail` while your modules
 did not exist. Tell him to remove the marker and run it.

@@ -1754,6 +1754,229 @@ tests covering both outcomes, but the end-to-end path will first meet a real
 "confirmed" case on the actual results. We chose to write this down rather than
 redesign the fake data to flatter us.
 
+
+---
+
+## 2026-08-19 — Boltzmann's temperature was measured against the real mazes, and it is 500x too high
+
+**Status:** Active. **A proposal, not a change — `config.py` is Samuel's file and
+nobody has edited it.** Must be settled before the sweep on the 20th.
+
+**Background.** The pilot had Boltzmann scoring 0.064 on Empty-5 where plain
+epsilon-greedy scored 0.637, with no novelty bonus involved anywhere. Our own
+earlier log entry predicted why, so we went and measured it properly.
+
+### What we measured
+
+We ran a real Double DQN on six mazes — two from each family, easy and hard —
+for 160,000 steps each, two seeds apiece, twelve runs in total. At every single
+step we recorded how far apart the network's action scores were: the gap between
+its favourite action and its runner-up.
+
+The agent was driven by **epsilon-greedy**, deliberately. Driving it with
+Boltzmann would have made the measurement depend on the very number we were
+trying to choose.
+
+### The result
+
+| maze | did it ever solve it? | typical gap between best and second-best |
+|---|---|---|
+| Empty-5 | yes (0.95) | 0.0059 |
+| Empty-16 | yes (0.76) | 0.0034 |
+| DoorKey-5 | yes (0.97) | 0.0029 |
+| DoorKey-8 | no (0.01) | 0.0001 |
+| MultiRoom-N4 | no (0.00) | 0.0001 |
+| MultiRoom-N6 | no (0.00) | 0.0001 |
+
+Two things stand out. The gaps are **tiny** — thousandths, not tenths. And they
+line up exactly with whether the agent ever found the goal: mazes it solves
+develop gaps around 0.003 to 0.006, mazes it never solves stay near 0.0001. That
+makes sense and is a good sign the measurement is real rather than a bug: if
+nothing is ever rewarded, the network has no reason to rate any action above any
+other, so all its scores collapse together.
+
+The gaps also did **not** grow over the 160,000 steps we watched. They were flat
+or shrinking.
+
+### Why this breaks Boltzmann completely
+
+Boltzmann's temperature is divided into those scores, so it only means something
+next to them. Ours runs from 1.0 down to 0.05. The scores are around 0.003.
+
+Working out what the agent actually does, where picking at random would give any
+one of the seven actions a 14.3% chance:
+
+| point in training | temperature | chance it picks its favourite action |
+|---|---|---|
+| start | 1.0 | 14.3% |
+| 40,000 steps | 0.47 | 14.4% |
+| 160,000 steps onward | 0.05 | 15.1% |
+
+**Boltzmann is picking at random for the entire run.** Not "explores too long" —
+it never stops exploring, on any of the thirteen mazes, at any point in 400,000
+steps. Epsilon-greedy by comparison ends up picking its favourite 95.7% of the
+time. That fully explains the 0.064: we were not testing Boltzmann against
+epsilon-greedy, we were testing random against epsilon-greedy.
+
+### What we propose instead
+
+Keep the shape of the schedule and the 40% decay window. Move the two endpoints
+so they are derived from the measured gap of 0.0034 rather than picked as round
+numbers:
+
+| | now | proposed |
+|---|---|---|
+| `tau_start` | 1.0 | **0.01** |
+| `tau_end` | 0.05 | **0.001** |
+
+The endpoints come from stating what we want and solving backwards: start
+slightly above random, end clearly decisive. That gives:
+
+| point in training | chance it picks its favourite |
+|---|---|
+| start | 28% |
+| 40,000 steps | 39% |
+| 160,000 steps onward | 93% |
+
+which is a strategy that explores and then commits, and is comparable to
+epsilon-greedy's 14% to 96% while still committing more gradually — which is what
+makes Boltzmann a different strategy rather than a copy.
+
+**On the mazes it never solves, the proposal still behaves nearly at random**
+(around 18%). We think that is correct rather than a flaw: with no reward ever
+found, there is nothing to be decisive *about*, and confidently repeating an
+arbitrary action would be worse.
+
+### Why this is calibration and not cheating
+
+Our own rules forbid tuning a strategy to make it win. The line we are drawing:
+the rule is **"every knob measured in reward-units is set against the actual
+reward scale of the environment"**, it is written down here before the sweep runs,
+and it is applied to all four strategies. Epsilon-greedy needs no such treatment
+because its knob is a probability and has no units — that is luck of definition,
+not virtue. NoisyNets' `sigma0` does have units and must be checked the same way
+before the 20th.
+
+What we are explicitly **not** doing is trying several values and keeping the one
+that scores best. We ran no Boltzmann at all in this measurement.
+
+### Honest limits of this measurement
+
+- The gaps come from a network trained by **epsilon-greedy**. Boltzmann's own
+  run will produce a somewhat different network. There is no way around this
+  without circularity, but it means the endpoints are calibrated to a reference
+  scale rather than to Boltzmann's own.
+- **Two seeds, six of thirteen mazes, 160,000 of 400,000 steps.** The gaps were
+  flat over that window so we expect them to stay flat, but we have not seen the
+  last 240,000 steps.
+- The gaps differ **59-fold** between the easiest and hardest maze, so no single
+  temperature is right everywhere — the same structural problem the novelty bonus
+  has. We are choosing one number for all thirteen because the schedule has to be
+  stated in the report, and because on the low-signal mazes being near-random is
+  the sensible fallback.
+
+### One alternative we considered and rejected
+
+Rescale the temperature automatically from the spread of scores the network is
+currently producing, so it adapts per maze and per moment. It would handle the
+59-fold spread properly. We rejected it because it changes what "Boltzmann
+exploration" means, adds code and a tuning knob of its own, and the professor
+asked for a schedule we can state plainly in the report. Written down because if
+the results look odd on the hard mazes, this is the first thing to reconsider.
+
+**Reproduce with:** `python scripts/measure_q_gaps.py --envs Empty-5 DoorKey-5
+MultiRoom-N4 --seeds 0 1 --steps 160000 --window 10000 --out gaps.csv`
+(about 3 minutes per run at ~960 steps/s).
+
+---
+
+## 2026-08-19 — NoisyNets implemented, and its knob turns out to be fine
+
+**Status:** Active
+
+**What changed:** Added the fourth and last strategy. The other three add
+randomness to *which action* the agent picks. This one adds randomness to the
+network's *own weights* instead, and then chooses actions with no randomness at
+all.
+
+**The interesting bit:** the amount of noise is a learned parameter. The network
+works out for itself which parts of it still benefit from randomness, instead of
+us picking a decay schedule by hand like we did for the other strategies. That is
+the main argument for it in the original paper.
+
+**What it means for the results:** We switch the noise off when measuring
+performance, so reported scores use the network's average weights. If we forgot
+that, every score would have random jitter in it. There is a test that fails if
+someone breaks it.
+
+**One implementation note:** we use the "factorised" noise variant, which draws
+one random number per input and per output and multiplies them, instead of one
+per weight. For our biggest layer that is about 1,000 random numbers per step
+instead of 65,000 — same idea, far cheaper.
+
+### We checked `noisy_sigma0` the same way we checked the other two knobs, and it does not need changing
+
+Having found that Boltzmann's temperature was 500x mis-scaled and the novelty
+bonus 14x, we were expecting a third problem. There isn't one, and the reason is
+worth writing down.
+
+We measured how often the agent's chosen action actually *changes* when the noise
+is redrawn. That is the direct measure of how much this strategy explores.
+Picking completely at random would change it about 86% of the time; never
+exploring would be 0%.
+
+| maze | does it solve it? | start | 10,000 | 25,000 | 50,000 |
+|---|---|---|---|---|---|
+| Empty-5 | yes | 32% | 39% | 43% | **9%** |
+| DoorKey-5 | eventually | 32% | 70% | 45% | **16%** |
+| MultiRoom-N4 | never | 32% | 80% | 57% | **76%** |
+
+This is the behaviour we wanted and did not get from Boltzmann. On mazes the
+agent solves, it explores heavily early and then settles down and commits. On the
+maze it never solves, it keeps exploring — which is the right response to having
+learned nothing.
+
+**Why this one self-corrects and the other two did not.** Boltzmann's temperature
+and the novelty bonus are numbers *we* fix in advance, so if we pick them at the
+wrong scale they stay wrong for the whole run. NoisyNets' noise level is a
+learned parameter — the training process adjusts it. We watched it fall by about
+26% on Empty-5 over 50,000 steps on its own. The knob only sets a starting point,
+and the network moves it from there.
+
+So the size of the noise stays comparable to the size of the differences between
+action scores throughout, instead of dwarfing them by 500x the way the
+temperature did.
+
+**Decision: `noisy_sigma0` stays at 0.5. No change to `config.py`.**
+
+**Honest limits:** 50,000 steps of the eventual 400,000, one seed, three of
+thirteen mazes. We are reading the shape of the curve, not certifying a value.
+And unlike the temperature question, there is a real safety net here: if 0.5 were
+somewhat wrong, learning would pull it back. That is exactly why we are
+comfortable leaving it alone on thinner evidence than we demanded for Boltzmann.
+
+**Reproduce with:** `python scripts/measure_sigma.py --env Empty-5 --steps 50000`
+
+### A deliberate simplification, for the report's limitations section
+
+The original paper redraws the noise for both the online and the target network
+on every learning update. Our training loop only redraws it before the agent
+acts, so one learning update reuses the noise from that step, and the target
+network keeps the noise it started with.
+
+This is on purpose, not an oversight: it keeps the training loop byte-identical
+across all four strategies, which is the controlled comparison the whole project
+rests on. Exploration still works, because the noise that actually drives the
+agent's choices is redrawn every single step. **This belongs in the report.**
+Deviating from a cited paper is fine; deviating from it silently is not.
+
+### Nothing needed from Samuel
+
+His end-to-end test was written to detect our module rather than to be edited:
+it checks whether `rlx.exploration.noisy` can be imported and drops its
+"expected to fail" marker automatically. It became a real passing test the moment
+our file landed. Worth copying that trick.
+
 ## 2026-08-19 — The seven figures, and the four things looking at them caught
 
 **Status:** Active
@@ -1826,3 +2049,4 @@ end of training regardless of strategy. That is a property of the fake data, not
 of the figure. Whether this figure actually separates the strategies can only be
 judged on the real runs — and if it does not, the honest fix is to draw an
 earlier snapshot rather than a later one, not to adjust the picture.
+

@@ -14,7 +14,7 @@ Last updated: **2026-08-19** (second update, after the tasks 1-4 review), by Dan
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
-| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
+| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets | — | 5 write-ups |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures | — | 6 report scaffold |
 
 
@@ -40,6 +40,8 @@ Everything below is merged and safe to import.
 | `EpsilonGreedy` | `rlx.exploration.epsilon_greedy` | Samuel (training loop), Max |
 | `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
 | `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
+| `NoisyExplorer` | `rlx.exploration.noisy` | Samuel (training loop), Max |
+| `NoisyLinear` (real, factorised Gaussian) | `rlx.networks` | Samuel — placeholder is gone, `test_every_strategy_runs_end_to_end[noisy]` now runs for real |
 | `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
 | `FIGURE_NAMES`, `COLORS`, `LABELS`, `make_all_figures`, `python -m rlx.analysis.figures` | `rlx.analysis.figures` | Daniel (task 6), report |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
@@ -314,6 +316,48 @@ argument, which points the same way.
 
 If we launch as-is, "Boltzmann came last" is a statement about our schedule, not
 about Boltzmann.
+
+**MEASURED 2026-08-19, and it is worse than "still random at 40k" — Boltzmann is
+random for the WHOLE run.** Real Double DQN, 6 instances x 2 seeds x 160,000
+steps, epsilon-greedy as the behaviour policy (using Boltzmann would make the
+measurement depend on the parameter being chosen). Recorded the best-vs-second
+Q gap at every step:
+
+| instance | solved? | median gap |
+|---|---|---|
+| Empty-5 | 0.95 | 0.0059 |
+| Empty-16 | 0.76 | 0.0034 |
+| DoorKey-5 | 0.97 | 0.0029 |
+| DoorKey-8 | 0.01 | 0.0001 |
+| MultiRoom-N4 | 0.00 | 0.0001 |
+| MultiRoom-N6 | 0.00 | 0.0001 |
+
+Gaps track whether a reward was ever found, and **did not grow** over 160k steps.
+They are ~0.003, not the ~0.01 estimated. Against tau running 1.0 -> 0.05, that
+gives p(pick own favourite action) of **0.143 at start, 0.144 at 40k, 0.151 at
+tau_end** — uniform is 0.143, epsilon-greedy ends at 0.957. `tau_end` is the
+broken end, not `tau_start`, and it is ~500x too large.
+
+**PROPOSED — `tau_start` 1.0 -> 0.01, `tau_end` 0.05 -> 0.001.** Shape and
+`tau_decay_frac = 0.4` unchanged. Endpoints derived from the measured 0.0034 gap
+by stating a target and inverting the softmax, not by trying values. Gives
+p(favourite) 0.28 -> 0.93 on instances with a reward signal, ~0.18 on the ones
+without (correct: nothing to exploit there). **Nobody has edited `config.py`.**
+
+Full derivation, limits and the rejected adaptive-tau alternative are in
+`docs/decision_log.md`, "Boltzmann's temperature was measured against the real
+mazes". Reproduce with `scripts/measure_q_gaps.py`.
+
+**`noisy_sigma0` was checked the same way on 2026-08-19 and is FINE — it stays at
+0.5, so this remains TWO decisions, not three.** Measured how often the greedy
+action changes when the noise is redrawn (86% = uniform random, 0% = no
+exploration): Empty-5 32% -> 43% -> 9%, DoorKey-5 32% -> 70% -> 16%,
+MultiRoom-N4 32% -> 80% -> 76% over 50k steps. Explores early, commits once it
+learns, keeps exploring where it never learns. It self-corrects because sigma is
+a *learned* parameter — it fell ~26% on its own — which is exactly why tau and
+count_beta cannot self-correct and it can. Details in `docs/decision_log.md`,
+"NoisyNets implemented, and its knob turns out to be fine"; reproduce with
+`scripts/measure_sigma.py`.
 
 **Proposed: `count_beta = 0.01`** — worst case falls from 14x to ~3x while the
 bonus stays meaningful on MultiRoom. **Nobody has changed `config.py`.** This
