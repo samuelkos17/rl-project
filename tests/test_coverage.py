@@ -148,3 +148,17 @@ def test_a_multiroom_connecting_door_is_not_a_waypoint():
                     start=(1, 1), goal=(7, 1), key=None, door=(4, 3))
     mask = task_relevant_mask(info)
     assert not mask[4, 3], "a MultiRoom connecting door is not a landmark"
+
+
+def test_early_auc_integrates_from_zero_when_there_is_no_snapshot_at_step_zero():
+    """The shape of every real run: train.py snapshots at `step > 0`, so the
+    first point is at snapshot_every, never at 0.
+
+    Coverage ramps linearly 0 -> 1 over 100k steps, so the true mean over the
+    first 20k is 0.1. Normalising by the observed snapshot span (10k..20k)
+    instead of by the 20k window returns 0.15 -- 50% too high here, and ~12%
+    too high at the real 400k/10k settings.
+    """
+    steps = np.arange(10_000, 100_001, 10_000)
+    coverage = steps / 100_000
+    assert np.isclose(early_auc(steps, coverage, 100_000, frac=0.2), 0.1)

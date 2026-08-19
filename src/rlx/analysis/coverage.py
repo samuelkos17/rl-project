@@ -103,8 +103,15 @@ def early_auc(steps: np.ndarray, coverage: np.ndarray,
               total_steps: int, frac: float = 0.2) -> float:
     """Normalised area under the coverage curve over the first `frac` of training.
 
-    Dividing by the window width puts the result in [0, 1], so it is comparable
-    across environments and step budgets.
+    Dividing by the window width `frac * total_steps` puts the result in [0, 1],
+    so it is comparable across environments, step budgets and snapshot cadences.
+
+    `train.py` snapshots at `step > 0`, so no real run has a point at step 0 and
+    the window's first slice would otherwise be missing. Coverage at step 0 is
+    taken as 0.0 and prepended. That is not exactly true -- the agent already
+    occupies its start state -- but the error is one state out of
+    `4 * reachable`, below 1% on our smallest maze, against the 12% error of
+    normalising by the observed snapshot span instead.
 
     Raises ValueError if fewer than two snapshots fall inside the window. An
     earlier version returned `coverage[0]` instead, which on a short run is the
@@ -123,5 +130,10 @@ def early_auc(steps: np.ndarray, coverage: np.ndarray,
             f"(first snapshot at step {int(steps[0]) if len(steps) else 'n/a'}). "
             f"Lower snapshot_every for this run: the window needs at least 2 points."
         )
-    return float(np.trapezoid(coverage[inside], steps[inside]) /
-                 (steps[inside][-1] - steps[inside][0]))
+    # The guard above counts REAL snapshots, so prepending the origin cannot
+    # rescue a window that has too little measured data in it.
+    xs, ys = steps[inside], coverage[inside]
+    if xs[0] > 0:
+        xs = np.concatenate(([0], xs))
+        ys = np.concatenate(([0.0], ys))
+    return float(np.trapezoid(ys, xs) / window)
