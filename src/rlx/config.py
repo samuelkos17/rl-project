@@ -38,13 +38,18 @@ class RunConfig:
     snapshot_every: int = 10_000
 
     # --- strategy hyperparameters (only the relevant ones are read) ---
+    # tau_* and count_beta are calibrated to MiniGrid's reward scale, not
+    # picked as round numbers: measured Q-gaps are ~0.0034, so the old
+    # tau_end=0.05 left Boltzmann uniform-random for the whole run. Agreed by
+    # all three of us on 2026-08-19, BEFORE any result was seen -- changing
+    # them now would mean choosing our own result. See docs/decision_log.md.
     epsilon_start: float = 1.0
     epsilon_end: float = 0.05
     epsilon_decay_frac: float = 0.2
-    tau_start: float = 1.0
-    tau_end: float = 0.05
+    tau_start: float = 0.01
+    tau_end: float = 0.001
     tau_decay_frac: float = 0.4
-    count_beta: float = 0.05
+    count_beta: float = 0.01
     count_epsilon: float = 0.05
     noisy_sigma0: float = 0.5
 

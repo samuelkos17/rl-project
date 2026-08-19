@@ -37,9 +37,35 @@ def test_high_temperature_is_close_to_uniform(cfg, rng, q_values, key):
 def test_better_actions_are_sampled_more_often_than_worse_ones(cfg, rng, q_values, key):
     """This is the whole point of Boltzmann over epsilon-greedy."""
     b = Boltzmann(cfg, rng)
+    # Pin the temperature rather than inheriting the config default, like the two
+    # tests above do. The q_values fixture spans 0.85, ~250x the ~0.003 gaps a
+    # real network produces, so at the configured tau_start the softmax saturates
+    # onto the argmax and this property becomes untestable on these numbers.
+    b.cfg.tau_start = 1.0
     counts = np.bincount([b.act(q_values, key, 0) for _ in range(5000)], minlength=7)
     # q_values[5] = 0.30 is rated higher than q_values[4] = 0.05
     assert counts[5] > counts[4]
+
+
+def test_configured_schedule_explores_then_commits_at_realistic_q_gaps(cfg, rng, key):
+    """Regression test for the bug that made Boltzmann uniform-random.
+
+    tau only means anything relative to the size of Q differences. With
+    tau_end=0.05 against real gaps of ~0.003, Boltzmann picked its favourite
+    action 15% of the time versus 14.3% for a coin flip -- it never exploited,
+    for the entire run, and no test noticed. These Q-values are the measured
+    scale (gap 0.0034, spread 0.0206); see docs/decision_log.md.
+    """
+    q = np.array([0.0, 0.004, 0.002, 0.0206, 0.001, 0.017, 0.010])
+    uniform = 1.0 / len(q)
+    b = Boltzmann(cfg, rng)
+
+    p_start = b.probabilities(q, b.temperature(0))[3]
+    p_end = b.probabilities(q, b.temperature(cfg.total_steps))[3]
+
+    assert p_start > 1.5 * uniform, f"starts indistinguishable from random: {p_start:.3f}"
+    assert p_end > 0.8, f"never commits to its favourite action: {p_end:.3f}"
+    assert p_end > p_start, "must become greedier over training, not less"
 
 
 def test_no_overflow_at_tiny_temperature(cfg, rng, key):
