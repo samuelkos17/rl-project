@@ -364,7 +364,9 @@ not against real results on the 22nd.
 merged yet, test the correlation functions with the hand-built frames above and
 run this end-to-end check once it lands.
 
-- [ ] **Step 6: Add the rliable aggregate comparison** — PARTIAL, 2026-08-18. `probability_of_improvement` is done and tested (needs no library). `rliable_aggregate` is NOT written: `rliable` does not import (arch 7.2.0 vs pandas 3.0.5). Team deferred the dependency decision; see `docs/decision_log.md`, "The statistics trap we nearly walked into, and one we walked into".
+- [x] **Step 6: Add the rliable aggregate comparison** — DONE, 2026-08-19. `rliable_aggregate` and `probability_of_improvement` are both written and tested. Two deviations from the code below, both forced by the installed library and both recorded in `docs/decision_log.md`, "rliable runs now, and the fix we had recommended was the wrong one":
+  1. **`requirements.txt` pins `pandas>=2.0,<3` AND `arch>=7.2,<8`.** The previously recommended `arch>=8.0` does NOT work — arch 8.0.0 renamed `IIDBootstrap`'s `random_state` parameter to `seed`, and rliable 1.2.0 (the newest release) still passes `random_state=`, so every bootstrap raises `TypeError`. Only the import had been checked, never a call.
+  2. **`random_state=` is not passed to `get_interval_estimates`.** `rliable.library.StratifiedBootstrap.update_indices` calls `np.random.choice`, i.e. the GLOBAL numpy RNG, ignoring the generator it is handed. `rliable_aggregate` therefore seeds the global RNG and restores the previous state in a `finally` block — the one place in the codebase that touches global randomness (`CLAUDE.md` §11). Verified bit-identical across 20 calls with a deliberately perturbed global RNG.
 
 The `iqm_by_strategy` above is a hand-rolled IQM with a bootstrap CI — fine for
 per-instance bars, and only ~10 lines. But the proposal commits to `rliable`, and

@@ -153,3 +153,66 @@ def test_probability_of_improvement_scores_all_ties_as_one_half():
     rows = [["MultiRoom-N6", 6, "a", i, 0.0, 0.5] for i in range(5)]
     rows += [["MultiRoom-N6", 6, "b", i, 0.0, 0.5] for i in range(5)]
     assert probability_of_improvement(_frame(rows), "a", "b") == 0.5
+
+
+def test_rliable_aggregate_returns_an_iqm_and_interval_per_strategy():
+    from rlx.analysis.stats import rliable_aggregate
+
+    rows = []
+    for env in ("Empty-5", "DoorKey-5"):
+        for strat, base in (("a", 0.8), ("b", 0.4)):
+            for seed in range(5):
+                rows.append([env, 5, strat, seed, base + seed * 0.01, 0.5])
+    out = rliable_aggregate(_frame(rows))
+
+    assert set(out) == {"a", "b"}
+    assert out["a"]["iqm"] > out["b"]["iqm"]
+    for r in out.values():
+        assert r["ci_low"] <= r["iqm"] <= r["ci_high"]
+
+
+def test_rliable_aggregate_is_reproducible():
+    """rliable resamples internally. Without a pinned seed the report would print
+    a different confidence interval every time it is regenerated.
+
+    Compared to a tolerance, not bit-exactly: repeated runs differ in the last
+    float bit (~1e-16) from summation order, while an unseeded bootstrap differs
+    around the second decimal. 1e-9 separates the two by seven orders of
+    magnitude, so this still fails loudly if the seed stops being passed.
+    """
+    import pytest
+
+    from rlx.analysis.stats import rliable_aggregate
+
+    rows = []
+    for env in ("Empty-5", "DoorKey-5"):
+        for strat, base in (("a", 0.8), ("b", 0.4)):
+            for seed in range(5):
+                rows.append([env, 5, strat, seed, base + seed * 0.03, 0.5])
+    frame = _frame(rows)
+
+    first = rliable_aggregate(frame, seed=0)
+    second = rliable_aggregate(frame, seed=0)
+    assert set(first) == set(second)
+    for strategy, values in first.items():
+        assert values == pytest.approx(second[strategy], rel=1e-9)
+
+
+def test_rliable_aggregate_rejects_an_incomplete_matrix():
+    """A strategy missing a run leaves a hole in the (seeds x instances) matrix.
+    rliable would silently return NaN; we refuse instead, the same way
+    early_auc does. A crashed run must not become a quiet blank in the report."""
+    import pytest
+
+    from rlx.analysis.stats import rliable_aggregate
+
+    rows = []
+    for env in ("Empty-5", "DoorKey-5"):
+        for strat, base in (("a", 0.8), ("b", 0.4)):
+            for seed in range(5):
+                if strat == "a" and env == "DoorKey-5" and seed == 4:
+                    continue          # the crashed run
+                rows.append([env, 5, strat, seed, base + seed * 0.01, 0.5])
+
+    with pytest.raises(ValueError, match="missing"):
+        rliable_aggregate(_frame(rows))

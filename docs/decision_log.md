@@ -1553,3 +1553,104 @@ not seen run. Everything else in the task is complete, including
 `probability_of_improvement`, which needs no external library. `iqm_by_strategy`
 already produces interquartile means with bootstrap intervals per maze, so the
 per-maze plots are unaffected; only the single cross-maze aggregate is waiting.
+
+**Superseded on 2026-08-19** — see "rliable runs now, and the fix we had
+recommended was the wrong one" at the end of this file. The `arch` 8.0.0 upgrade
+recommended above does NOT work; it was only ever checked as an import.
+
+## 2026-08-19 — rliable runs now, and the fix we had recommended was the wrong one
+
+**Status:** Active. Supersedes the "Blocked: the rliable comparison" section of
+the 2026-08-18 entry above.
+
+**Background in one sentence:** `rliable` is the statistics library the proposal
+promises and the professor approved; it produces the "which strategy wins, with
+honest error bars" number by re-drawing our results thousands of times and seeing
+how much the answer wobbles.
+
+**What we thought yesterday:** that upgrading one small library (`arch`, from
+7.2.0 to 8.0.0) would fix it. That recommendation was written down in
+`STATUS.md` and in the log entry above, and it was **wrong**.
+
+**What actually happened:** the upgrade fixed the crash we could see and revealed
+a second one behind it. `arch` 8.0.0 had renamed a setting from `random_state` to
+`seed`, and `rliable` still asks for it by the old name — so every single
+calculation failed instead of only the import. We had verified that `rliable`
+could be *loaded*, never that it could be *used*. That is the whole lesson: an
+import check is not a test.
+
+**What we did instead:** held both libraries one version back — `pandas` below 3
+and `arch` below 8 — which is the combination we actually watched produce
+numbers. Both pins are in `requirements.txt` with the reason written next to
+them, because removing either one brings the breakage straight back.
+`rliable` 1.2.0 is the newest release there is, so waiting for an update was not
+an option.
+
+**Everyone must re-run this**, or the analysis will crash on your machine:
+
+```bash
+pip install -r requirements.txt
+```
+
+**A second surprise, and why our numbers would otherwise have moved on their
+own:** `rliable` offers a setting that is supposed to make its results
+repeatable. Reading its source shows the setting is ignored — the library asks
+the computer for fresh random numbers from a different place than the one that
+setting controls. Left alone, every regeneration of the report would print a
+slightly different confidence interval, and nobody would know which was in the
+submitted PDF. We now set that other source explicitly and put it back the way we
+found it afterwards. Verified: 20 runs in a row, deliberately shaken up in
+between, produce **bit-for-bit identical** output.
+
+**What it means for the results:** no number changes. `pandas` 2 versus 3 does
+not affect any calculation we do — we only use it to hold tables. What changes is
+that the cross-maze comparison the proposal promised now exists and is
+reproducible, instead of being missing.
+
+## 2026-08-19 — The fake data now covers all 13 mazes, and one dial had to move
+
+**Status:** Active
+
+**Reminder of what the fake data is for:** we build the analysis before any real
+experiment has run, using invented results in the exact format real runs will
+have. The invented data has a known right answer, so if the analysis fails to
+find it, the analysis is broken.
+
+**What changed:** the fake dataset covered 6 of the 13 mazes, two per family. It
+now covers all 13.
+
+**Why:** one of our three hypotheses is that the coverage effect gets *stronger*
+as mazes get harder. Measuring "does it get stronger" needs at least three mazes
+of increasing difficulty in a family. With only two, the measurement could not be
+computed at all and came back blank — so that hypothesis had no end-to-end test.
+
+**The dial that had to move, and this is the interesting part:** extending to 13
+mazes was not enough on its own. On first measurement the trend came out at
+**+0.13 for the real dataset and +0.17 for the deliberately-effect-free control
+dataset** — in other words, our "signal" was smaller than our known-nothing case,
+which would have made the test worthless.
+
+The cause was a ceiling. The invented effect was tied to how hard a maze is
+overall, and on the MultiRoom family every instance already sat at the very top
+of the scale (0.90 to 0.97 out of a maximum of 1.0). There was no room left to
+climb, so a rising effect could not show up as rising. We retied the invented
+effect to a maze's position *within its own family* — which is exactly what the
+analysis measures — so the easiest maze in each family now starts low and the
+hardest ends high.
+
+After the change: **+0.90 for the real dataset against +0.17 for the control.**
+Five times the separation, so the test can now actually tell the two apart.
+
+**What it means for the results:** nothing about the real experiment changes —
+this is invented data, and no reported number comes from it. What changes is that
+one more thing can now fail loudly if we break it. Two consequences to know
+about:
+
+- The fake dataset is now 260 runs and 8.6 MB instead of 120 runs and 3.5 MB. It
+  takes about 3 seconds to generate and is not stored in git.
+- **If you have a `results_synthetic` folder from before 2026-08-19, delete and
+  regenerate it**, otherwise you are looking at yesterday's shape:
+
+```bash
+python scripts/make_synthetic_results.py --out results_synthetic
+```
