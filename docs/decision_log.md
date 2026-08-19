@@ -2361,3 +2361,44 @@ the pilot is a plumbing test, not a source of results.
 **What it means for the results:** no number changes. Three figure defects fixed
 before they could reach the report, all found by ten minutes of real data that
 two days of fake data could not surface.
+
+## 2026-08-19 — On the smallest maze our main measurement cannot tell anything apart
+
+**Status:** Active
+
+**What we found:** re-running the pilot after the temperature correction, two
+strategies came out with *exactly* the same early-coverage number on Empty-5.
+That is not a coincidence and not a bug.
+
+Empty-5 has nine walkable squares. With four directions to face, that is 36
+distinct situations the agent can be in. Both strategies had seen 32 of them
+after **one thousand steps** and never saw another one after that — the missing
+four are almost certainly at the goal square, which ends the episode the moment
+the agent steps on it, so it is only ever seen from one direction.
+
+```
+boltzmann       coverage at 1k / 2k / 3k / 4k steps = 0.889  0.889  0.889  0.889
+epsilon-greedy  coverage at 1k / 2k / 3k / 4k steps = 0.889  0.889  0.889  0.889
+```
+
+**Why it matters.** Our central measurement is "how much of the maze did the
+agent see early on", and we compare that against how well it eventually scores.
+On Empty-5 every strategy sees everything almost immediately, so that measurement
+is the same number for all of them and can predict nothing. There is no effect to
+find there — not because exploration does not matter, but because the maze is too
+small for the question to have an answer.
+
+**This is the maze, not the short test run.** Empty-5 will be exhausted inside the
+first one percent of a full-length run too.
+
+**It agrees with what we already saw on the fake data**, where Empty-5 was the
+weakest of the thirteen and the only instance whose confidence interval included
+zero.
+
+**What it means for the results:** the report should say this in the limitations
+section rather than let Empty-5 turn up later as a weak result that needs
+explaining away. The honest sentence is: on the smallest instances the coverage
+measure runs out of room before the early window closes, so it has no
+discriminating power there, and the hypothesis can only be tested where the maze
+is big enough for strategies to differ. Nothing about the other twelve instances
+changes.
