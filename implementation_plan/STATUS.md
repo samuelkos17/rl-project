@@ -15,7 +15,7 @@ Last updated: **2026-08-19** (second update, after the tasks 1-4 review), by Dan
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based | — | 4 noisy-nets (blocked on Samuel 4) |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics (**complete**, rliable included) | — | 5 figures |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures | — | 6 report scaffold |
 
 
 ## What is available on `main` right now
@@ -41,6 +41,7 @@ Everything below is merged and safe to import.
 | `Boltzmann` | `rlx.exploration.boltzmann` | Samuel (training loop), Max |
 | `CountBased` | `rlx.exploration.count_based` | Samuel (training loop), Max |
 | `cfg`, `rng`, `q_values`, `key` fixtures | `tests/test_exploration/conftest.py` | Max |
+| `FIGURE_NAMES`, `COLORS`, `LABELS`, `make_all_figures`, `python -m rlx.analysis.figures` | `rlx.analysis.figures` | Daniel (task 6), report |
 | `RunResult`, `load_run`, `load_all`, `to_dataframe`, `final_return` | `rlx.analysis.aggregate` | Daniel |
 | `raw_coverage`, `task_relevant_coverage`, `task_relevant_mask`, `early_auc` | `rlx.analysis.coverage` | Daniel |
 | `build_analysis_table`, `within_instance_correlation`, `aggregate_correlation`, `compare_coverage_predictors`, `iqm_by_strategy`, `rank_stability`, `probability_of_improvement`, `rliable_aggregate`, `performance_profile` | `rlx.analysis.stats` | Daniel (figures), report |
@@ -455,3 +456,41 @@ task-relevant coverage, so `compare_coverage_predictors` correctly returns
 making raw and task-relevant coverage diverge in the generator — and on the Empty
 family they are identical by construction (ratio 1.00), so it cannot be done
 uniformly. Left as is.
+
+---
+
+## Task 5 done, 2026-08-19 — seven figures, and what deviates from the plan
+
+```bash
+python -m rlx.analysis.figures --results results_synthetic --out scratch/figs
+```
+
+Suite is **208 passed, 1 xfailed**. `src/rlx/analysis/figures.py` is 397 lines —
+over the ~200-line guidance in `CLAUDE.md` Rule 6, kept as one file because it is
+seven deliverables plus six small helpers, and `CLAUDE.md` §4 specifies exactly
+one `figures.py`.
+
+**Deviations from `05-figures.md`, all deliberate:**
+
+| what | why |
+|---|---|
+| `make_all_figures` raises `ValueError`, not `SystemExit` | `SystemExit` in a library function kills a caller's process; the house style is `ValueError` (`early_auc`, `_score_matrices`) |
+| fig2 uses a bootstrap CI, not `sem` | the plan's own convention: every uncertainty is a bootstrap CI, never a standard deviation |
+| fig4 has a **third panel** | per-instance rho with its bootstrap CI — the spec §7.3 step 2 numbers, and the panel that says which per-maze results are solid |
+| fig5 has a **second panel** | performance profiles, required by spec §7.2 and §7.5 and missing from the plan |
+| fig6 is three panels, not one axes | `difficulty` is grid size for Empty/DoorKey and room count for MultiRoom; one shared x axis would put MultiRoom-N6 beside DoorKey-6 |
+| fig7 has no `suptitle` | "no titles inside the figure"; the instance identity is on the y-axis label instead, because the poster shows the figure without a caption |
+| fig7 panels share one colour scale | with per-panel scaling every strategy looks equally thorough regardless of actual coverage — that would invert the figure's meaning |
+| x axes are labelled in thousands (`80k`) | six-digit ticks collided into one unreadable run of digits |
+| fig5 instances sorted by family then difficulty | alphabetical put DoorKey-10 before DoorKey-5 and Empty-16 before Empty-5 |
+
+**For task 6.** `report.py` needs nothing from `figures.py`; its smoke test is
+appended to `tests/test_figures.py`, which now has a module-scoped `synthetic`
+fixture and a `rendered` fixture. Reuse `synthetic`; do **not** re-render the
+figures for a report test.
+
+**Caveat on fig7, to check against real data.** On the synthetic fixture all four
+heatmaps look nearly identical, because the generator fills almost every reachable
+cell by the last snapshot regardless of strategy. That is the fixture, not the
+figure. If the real runs behave the same way, the honest fix is to draw an
+**earlier** snapshot, not to rescale the picture.

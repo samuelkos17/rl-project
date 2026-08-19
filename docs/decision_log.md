@@ -1753,3 +1753,76 @@ comparison correctly returns "not confirmed". The comparison logic has its own
 tests covering both outcomes, but the end-to-end path will first meet a real
 "confirmed" case on the actual results. We chose to write this down rather than
 redesign the fake data to flatter us.
+
+## 2026-08-19 — The seven figures, and the four things looking at them caught
+
+**Status:** Active
+
+**What changed:** wrote the code that produces every figure in the report, so all
+seven regenerate from one command whenever the results change:
+
+```bash
+python -m rlx.analysis.figures --results results --out report/figures
+```
+
+**The seven:**
+1. Learning curves — score over time, all four strategies, one panel per maze family.
+2. Score against difficulty — the headline plot the professor asked for.
+3. Coverage over time — both our coverage measures.
+4. Early coverage against final score — **the central result of the project**.
+5. Which strategy wins — robust average per maze, plus the full distribution.
+6. Rank stability — does the winner on easy mazes still win on hard ones?
+7. Visitation heatmaps — a picture of where each strategy actually went.
+
+**If we had to cut to two,** it would be 4 and 7. Number 4 is the actual claim we
+are making. Number 7 is the one that makes someone walking past the poster stop,
+because you can *see* the difference instead of reading it off an axis.
+
+**Four problems only became visible by opening the pictures**, which is why the
+plan insists on looking at every one rather than trusting that the tests passed:
+
+- **The step axis was unreadable.** Runs are 400,000 steps long and the tick
+  labels ran into each other as one solid line of digits — "50000100000150000".
+  Now labelled in thousands: 80k, 160k, 240k.
+- **Figure 5 listed the mazes alphabetically**, which put DoorKey-10 before
+  DoorKey-5 and Empty-16 before Empty-5. Difficulty has to read left to right or
+  the figure argues against itself. Now sorted by family, then difficulty.
+- **A legend sat on top of the bars** it was meant to explain.
+- **Figure 4 used the same four colours for two different things.** Its first two
+  panels colour points by strategy; the third panel had coloured the mazes by
+  family — in the same figure, so blue meant "Boltzmann" on the left and
+  "DoorKey" on the right. Families are now told apart by marker shape instead.
+
+**One thing that is a correctness fix, not a cosmetic one.** The four heatmaps in
+figure 7 now share a single colour scale. With one scale per panel, every
+strategy would look equally thorough no matter how much of the maze it actually
+covered — which is the exact opposite of what the figure is for.
+
+**Two additions beyond the original plan, both because the design document asks
+for them:**
+
+- Figure 5 gained a second panel, the **performance profile**: for every possible
+  score, what fraction of runs beat it. A single average can hide the shape
+  completely — two strategies can average the same while one solves half the
+  mazes brilliantly and fails the rest.
+- Figure 4 gained a third panel showing **each maze's own correlation with its
+  confidence interval**. This is the panel that says which per-maze results are
+  solid and which are coincidence, and on our fake data it does exactly that:
+  Empty-5's interval straddles zero while DoorKey-8's sits tight and high.
+
+**One rule we kept:** every shaded band and every error bar in all seven figures
+is a bootstrap confidence interval, never a standard deviation. Standard
+deviations look tighter and would make our results seem more certain than five
+seeds justify. The plan's own draft used a standard error for figure 2; we
+changed it to match the rule.
+
+**What it means for the results:** nothing changes any number. But regenerating
+from one command means the report can never show a figure built from older data
+than the tables beside it.
+
+**One honest caveat about figure 7.** On our fake data the four heatmaps look
+nearly identical, because the generator fills almost every reachable cell by the
+end of training regardless of strategy. That is a property of the fake data, not
+of the figure. Whether this figure actually separates the strategies can only be
+judged on the real runs — and if it does not, the honest fix is to draw an
+earlier snapshot rather than a later one, not to adjust the picture.

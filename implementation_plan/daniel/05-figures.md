@@ -1,5 +1,16 @@
 # Task 5 — The seven report figures
 
+> **DONE 2026-08-19.** Shipped as `src/rlx/analysis/figures.py` +
+> `tests/test_figures.py` (6 tests). The code below is the plan, not the shipped
+> version — **read the module**, which differs in nine documented places
+> (bootstrap CI instead of `sem`, `ValueError` instead of `SystemExit`, a third
+> panel on fig4, a performance-profile panel on fig5, three panels on fig6,
+> shared colour scale on fig7, thousands-formatted step axes, family-then-
+> difficulty ordering, no `suptitle`). The table of deviations is in
+> `implementation_plan/STATUS.md`, "Task 5 done"; the reasoning is in
+> `docs/decision_log.md`, "The seven figures, and the four things looking at them
+> caught".
+
 **Files:**
 - Create: `src/rlx/analysis/figures.py`
 - Test: `tests/test_figures.py`
