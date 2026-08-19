@@ -2372,9 +2372,15 @@ That is not a coincidence and not a bug.
 
 Empty-5 has nine walkable squares. With four directions to face, that is 36
 distinct situations the agent can be in. Both strategies had seen 32 of them
-after **one thousand steps** and never saw another one after that — the missing
-four are almost certainly at the goal square, which ends the episode the moment
-the agent steps on it, so it is only ever seen from one direction.
+after **one thousand steps** and never saw another one after that.
+
+> **Corrected 2026-08-19** by the tasks 1-6 review. This entry originally guessed
+> that the four missing situations were at the goal square, "seen from one
+> direction" — which would have left 33, not 32. The guess was right about the
+> square and wrong about the count: **none** of the four is ever recorded, because
+> of how the position is written down. We measured it rather than guessing again,
+> and fixed it. See "The goal square was in the denominator and could never be
+> reached" below.
 
 ```
 boltzmann       coverage at 1k / 2k / 3k / 4k steps = 0.889  0.889  0.889  0.889
@@ -2491,3 +2497,140 @@ against the real pilot results, which is where the two bugs below turned up.
 both commands against the real results, read them, and write down what they
 showed) are for 2026-08-22, after the sweep. The section of this log that
 records what the experiment actually found is still unwritten, on purpose.
+
+---
+
+## 2026-08-19 — The goal square was in the denominator and could never be reached
+
+**Status:** Active
+
+**What changed:** Our coverage number is "of all the squares the agent could
+possibly stand in, what fraction did it actually visit". It turns out one square
+was in the "could possibly" list that the agent can never be recorded on: the
+goal.
+
+The reason is a detail of *when* we write the position down. Each step, the
+training loop notes where the agent is standing, and only then lets it move. When
+the agent moves onto the goal, the maze ends immediately and gets reset, so by
+the time we write a position down again, the agent is back at the start. The
+square it won on is never written down — and since the agent can be facing any of
+four directions, that is four situations missing from every single run.
+
+**How we know, rather than assume:** we checked all 16 pilot runs. Every one of
+them has exactly zero visits recorded at the goal — including the two runs that
+*solved* Empty-5 and scored 0.955. It is not that they never got there; it is
+that getting there is the one thing we do not record.
+
+**What it did to the numbers:** it put a ceiling on coverage that nobody could
+ever pass:
+
+| Maze | squares reachable | highest coverage possible |
+|---|---|---|
+| DoorKey-5 | 7 | 0.857 |
+| Empty-5 | 9 | 0.889 |
+| MultiRoom-N2 | 19 | 0.947 |
+| DoorKey-10 | 57 | 0.982 |
+| Empty-16 | 196 | 0.995 |
+
+So on the small mazes we were reporting coverage up to 14% lower than the truth,
+and "1.0" did not mean "saw the whole maze" — it meant "saw everything except the
+one square that matters most".
+
+**Did this break the main result?** No, and it is worth being precise about why.
+The missing four situations are missing from *every* run of a maze in exactly the
+same way, so when we ask "did the agents that explored more early score better?"
+inside one maze, every agent is measured with the same slightly-wrong ruler. The
+ranking — which is all a rank correlation uses — does not move. What was wrong is
+the coverage *levels* we print in the report and draw on the coverage plots.
+
+**What we did:** the goal square is now left out of both halves of the fraction,
+so coverage of 1.0 again means "visited everything a run can be recorded on". The
+goal is still counted as task-relevant when we describe *what matters in the
+maze* — it obviously matters. It is only left out of the *measurement*, because
+the measurement is blind to it.
+
+**What it means for the results:** every coverage number in the report goes up
+slightly, most visibly on the small mazes. No correlation, hypothesis verdict or
+strategy ranking changes.
+
+---
+
+## 2026-08-19 — A review of all six analysis tasks, and the six other things it found
+
+**Status:** Active
+
+**What this was:** a full read-through of Daniel's workstream — visit logging,
+loading results, coverage, statistics, figures, and the results file — checking
+the code against what the plan said it should do, and against the project rules.
+All 233 tests passed before the review, and the pipeline ran end to end on real
+pilot data. The goal-square problem above was the biggest find. Six smaller ones:
+
+**1. A label that could state something false.** The results file printed a line
+"CI excludes zero: True/False". The code behind it actually checked "is the whole
+range above zero". Those agree whenever the result is positive — but if our main
+correlation had come out strongly *negative*, say a range of −0.80 to −0.40, the
+file would have printed "CI excludes zero: **False**" about a range that excludes
+zero about as clearly as a range can. The verdict on the hypothesis would still
+have been right; the sentence next to it would have been wrong. The line now says
+"95% CI lies entirely above zero", which is what is actually measured.
+
+**2. The early-coverage measure could quietly read low.** We measure exploration
+over the first fifth of training and divide by the width of that window. We
+already refuse to report it when fewer than two snapshots land inside the window.
+But nothing checked that the snapshots *reach the end* of it — with snapshots
+every 30,000 steps, the last one inside an 80,000-step window is at 60,000, so we
+would have measured three quarters of the window and divided by all of it, giving
+a number 25% too low with no complaint. It now refuses. At our real settings the
+snapshots land exactly on the window edge, so this never triggers; it is a guard
+for the day somebody changes that setting.
+
+**3. Three of our thirteen mazes cannot answer hypothesis 2.** H2 asks whether
+"coverage of the places that matter" predicts performance better than "coverage
+of everywhere". On the three `Empty` mazes those two numbers are *identical*, for
+every run — the maze is an open box with start and goal in opposite corners, so
+every square is on some shortest route and "the places that matter" is the whole
+maze. Those three mazes therefore contribute no evidence either way, and
+including them pulls the two measures together — that is, towards the very answer
+H2 fails on. We knew this and had written it down in a status file; the results
+file did not say it. It does now, automatically, naming the affected mazes.
+
+**4. Tables and figures were in different orders.** Sorting maze names
+alphabetically puts DoorKey-10 before DoorKey-5 and Empty-16 before Empty-5. The
+figures already sorted by difficulty; the tables did not, so difficulty jumped
+around inside a family. One shared ordering is now used by both.
+
+**5. Averaging curves of different lengths.** The learning-curve and
+coverage-curve figures average all runs of a family together. If one run had
+fewer measurement points than the others — which can only happen if two different
+configurations got mixed into one results folder — every curve was silently cut
+down to the shortest one, while the axis still claimed the full run. It now says
+so and stops.
+
+**6. We only ever tested that the analysis can say "yes".** We have two sets of
+fake results: one with the effect built in, one with no effect at all. The
+statistics were checked by hand against both and the numbers written into a
+status file — but only the "yes" case was covered by an automatic test. If a
+future change made every correlation come out positive, nothing would have caught
+it. Both directions are now tested on every run of the test suite.
+
+**One more, in a file that is not ours.** A test of the agent — Samuel's area —
+failed about one run in twenty, at random, on code that is correct. It builds two
+copies of the network, deliberately pushes them apart, and checks that they then
+disagree; but it fixed the random seed *after* building them, so the networks
+came out different every time the tests ran. Every so often the two happened to
+agree anyway and the test failed for no reason. Moving one line up fixes it, and
+we checked it 40 times over. Worth knowing because a test that cries wolf one
+time in twenty is a test people start ignoring, and this one guards the
+difference between the algorithm we said we used and a different one.
+
+**Also fixed:** the fake-data generator used to let its pretend agents stand on
+the goal square, which is exactly the one thing real runs cannot do — that is why
+the fake data could never have revealed the problem above. A comment in
+`requirements.txt` pointed at a decision-log entry that does not exist. And the
+plan file for the figures task had every step unticked although the work was
+finished and merged, so a future session would have redone it.
+
+**What it means for the results:** coverage levels rise slightly (see the entry
+above). Nothing else in any number changes. What changes is that four things
+which could have put a wrong sentence, a wrong order or a wrong-by-25% number
+into the report no longer can.
