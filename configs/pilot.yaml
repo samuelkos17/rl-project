@@ -2,6 +2,12 @@
 # 2 envs x 4 strategies x 2 seeds = 16 runs at 20k steps.
 defaults:
   total_steps: 20000
+  # The early-AUC window is 0.2 * total_steps = 4000 steps here. At the 10000
+  # default the first snapshot lands at step 10000, so NOTHING falls inside the
+  # window and early_auc raises -- the pilot would run for 9 minutes and then
+  # fail to measure the project's main predictor. 1000 puts 4 points in the
+  # window (1000/2000/3000/4000) at ~7 KB extra per run.
+snapshot_every: 1000
   device: cpu
   results_root: results_pilot
 
