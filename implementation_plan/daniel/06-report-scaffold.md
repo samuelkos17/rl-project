@@ -1,5 +1,25 @@
 # Task 6 — Report scaffold with auto-filled numbers
 
+> **AMENDED 2026-08-19 by the tasks 1-4 review. Two things in the code below are
+> out of date — read `src/rlx/analysis/stats.py` for the current API.**
+>
+> - **`confirms_h1` no longer means "the CI excludes zero".** Spec §1 states two
+>   conditions and it now requires both: CI excluding zero **and** a correlation
+>   that grows with difficulty. Printing it under the old label would state
+>   something false about the project's headline result — a negative trend with a
+>   positive CI would print "CI excludes zero: False". The half you want for that
+>   label is the new `ci_excludes_zero` key. Fixed inline below.
+> - **H2 has a function now: `compare_coverage_predictors(df, seed=0)`.** Spec §1
+>   requires task-relevant coverage to beat raw *with non-overlapping CIs*. The
+>   draft below prints both correlations and leaves the comparison to the
+>   reader's eye. Use the function's `confirms_h2` / `cis_overlap` /
+>   `task_minus_raw` instead, so the verdict is computed rather than eyeballed.
+>
+> Also available and worth putting in the results file: `performance_profile`
+> (spec §7.2), and the per-instance `rho_ci_low` / `rho_ci_high` columns that
+> `within_instance_correlation` now returns — `per.to_markdown()` picks them up
+> automatically.
+
 The last two days are for writing, not for hunting numbers in CSV files. This
 task builds the outline and generates a results file with every number already
 in it, so writing becomes filling in prose.
@@ -105,7 +125,9 @@ def _hypothesis_section(df: pd.DataFrame) -> str:
             f"- Instances with usable variance: {agg['n_instances']}",
             f"- Correlation vs difficulty trend: {agg['trend_with_difficulty']:+.3f} "
             f"(H1 predicts positive: stronger on harder mazes)",
-            f"- **CI excludes zero: {agg['confirms_h1']}**", "",
+            f"- CI excludes zero: {agg['ci_excludes_zero']}",
+            f"- **H1 confirmed (CI excludes zero AND trend positive): "
+            f"{agg['confirms_h1']}**", "",
             "Per instance:", "",
             per.to_markdown(index=False), "",
         ]

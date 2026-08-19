@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -67,3 +68,21 @@ def test_an_empty_results_directory_is_refused(tmp_path):
     later; say what is wrong at the point where it is knowable."""
     with pytest.raises(ValueError, match="no runs"):
         make_all_figures(tmp_path, tmp_path / "out")
+
+
+def test_nothing_is_written_when_the_run_matrix_has_a_hole(synthetic, tmp_path):
+    """fig5 needs a complete (seeds x instances) matrix, and it used to discover
+    a missing run only when it got there -- after fig1 to fig4 were already on
+    disk. report/figures/ would then hold four fresh figures beside three stale
+    ones from an earlier render, and the report would show two different
+    datasets side by side. Fail before writing anything instead."""
+    incomplete = tmp_path / "runs"
+    shutil.copytree(synthetic, incomplete)
+    shutil.rmtree(incomplete / "DoorKey-8" / "noisy" / "seed3")
+    out = tmp_path / "figs"
+
+    with pytest.raises(ValueError, match="missing"):
+        make_all_figures(incomplete, out)
+
+    assert not list(out.glob("*.pdf")) and not list(out.glob("*.png")), \
+        "a refused render must leave no half-written figure set behind"

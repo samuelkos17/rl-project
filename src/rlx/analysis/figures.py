@@ -24,7 +24,7 @@ from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
 from rlx.analysis.aggregate import RunResult, load_all  # noqa: E402
 from rlx.analysis.coverage import raw_coverage, task_relevant_coverage  # noqa: E402
 from rlx.analysis.stats import (  # noqa: E402
-    aggregate_correlation, build_analysis_table, iqm_by_strategy,
+    _score_matrices, aggregate_correlation, build_analysis_table, iqm_by_strategy,
     performance_profile, rank_stability, within_instance_correlation,
 )
 from rlx.envs import grid_info  # noqa: E402
@@ -373,11 +373,21 @@ def fig7_visitation_heatmaps(runs, df, out_dir, env_id: str | None = None,
 
 
 def make_all_figures(results_root: Path, out_dir: Path) -> None:
-    """Render every report figure from a results tree."""
+    """Render every report figure from a results tree.
+
+    Everything that can reject the data does so BEFORE the first figure is
+    written. fig5 needs a complete (seeds x instances) matrix and used to find a
+    hole only once it got there, leaving four fresh figures on disk beside three
+    stale ones from an earlier render -- so the report would have shown two
+    different datasets side by side without saying so.
+    """
     runs = load_all(Path(results_root))
     if not runs:
         raise ValueError(f"no runs found under {results_root}")
     df = build_analysis_table(runs)
+    # Pre-flight for fig5. Private, but same package, and running it here costs
+    # one pivot per strategy against the 2000 bootstrap resamples fig5 would do.
+    _score_matrices(df)
     for draw in (fig1_learning_curves, fig2_difficulty_curve, fig3_coverage_curves,
                  fig4_coverage_vs_return, fig5_iqm, fig6_rank_stability,
                  fig7_visitation_heatmaps):

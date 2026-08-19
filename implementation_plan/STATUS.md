@@ -603,3 +603,24 @@ heatmaps look nearly identical, because the generator fills almost every reachab
 cell by the last snapshot regardless of strategy. That is the fixture, not the
 figure. If the real runs behave the same way, the honest fix is to draw an
 **earlier** snapshot, not to rescale the picture.
+
+---
+
+## Two follow-ups after the task 5 review, 2026-08-19
+
+Both on `analysis/figures`. Suite **220 passed**.
+
+- **`make_all_figures` now validates before drawing.** It called `_score_matrices`
+  only inside fig5, so an incomplete run matrix left fig1–fig4 on disk beside
+  stale fig5–fig7 from an earlier render. Reproduced by deleting
+  `DoorKey-8/noisy/seed3`; covered by
+  `test_nothing_is_written_when_the_run_matrix_has_a_hole`.
+- **`06-report-scaffold.md` amended before task 6 starts.** Its draft printed
+  `confirms_h1` under the label "CI excludes zero", which stopped being true when
+  `confirms_h1` began requiring the difficulty trend as well. The label now uses
+  `ci_excludes_zero` and the hypothesis verdict is a separate line. The banner at
+  the top of that file also points task 6 at `compare_coverage_predictors` for
+  H2, at `performance_profile`, and at the new per-instance CI columns.
+
+**Still open, not Daniel's:** the Boltzmann `tau` decision (`config.py` + spec
+§5.2) and the unverified 14x claim on the count-based bonus.

@@ -2279,3 +2279,37 @@ measure only adds information for DoorKey and MultiRoom.
 `early_auc`, the project's main predictor, computed a real number on all 16 runs
 with no failures — which is the specific thing the pilot's snapshot fix was
 meant to enable.
+## 2026-08-19 — A half-written figure set was possible, and a label that would have lied
+
+**Status:** Active
+
+**Two small fixes found by reviewing the finished work rather than by a failing
+test. Neither changes a number.**
+
+**1. Regenerating the figures could leave the report showing two datasets at
+once.** The figure code checks whether every run is present — but it checked in
+the middle, while drawing figure 5. Figures 1 to 4 were already written to disk
+by then. So a sweep with one crashed run produced four fresh figures sitting
+beside three left over from an earlier render, with nothing saying so, and the
+report would have shown numbers from one dataset next to pictures from another.
+
+That is exactly the failure this log claimed was impossible three entries ago
+("regenerating from one command means the report can never end up showing a
+figure from an older version of the data"). It now checks before drawing
+anything, so a refused render leaves the folder untouched. There is a test that
+deletes a run and fails if any file appears.
+
+**2. The report generator was about to print something false.** It had a line
+reading "CI excludes zero: <value>", filled with a field that, since the review
+earlier today, means something else: our first hypothesis needs *two* things, and
+that field now reports whether both hold. On results where the interval excludes
+zero but the effect shrinks with difficulty, the report would have printed
+"CI excludes zero: False" — a plain false statement about the interval.
+
+Fixed in the plan before the code was written: the two conditions are now printed
+as two separate lines, one for the interval and one for the hypothesis as a
+whole.
+
+**What it means for the results:** nothing changes. One is a failure mode that
+had not happened yet, the other a sentence that had not been written yet. Both
+were cheaper to fix today than to notice on the 22nd.
