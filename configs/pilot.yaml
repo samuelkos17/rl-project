@@ -7,7 +7,7 @@ defaults:
   # window and early_auc raises -- the pilot would run for 9 minutes and then
   # fail to measure the project's main predictor. 1000 puts 4 points in the
   # window (1000/2000/3000/4000) at ~7 KB extra per run.
-snapshot_every: 1000
+  snapshot_every: 1000
   device: cpu
   results_root: results_pilot
 
