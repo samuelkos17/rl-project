@@ -11,6 +11,11 @@ from rlx.envs import difficulty_index
 
 REQUIRED_FILES = ("metrics.csv", "visitation.npz", "config.json")
 
+#: Report order for the three families, as CLAUDE.md section 7 lists them. Lives
+#: here rather than in figures.py because results.md needs the same order and the
+#: two must not disagree.
+FAMILIES = ("Empty", "DoorKey", "MultiRoom")
+
 
 @dataclass
 class RunResult:
@@ -79,6 +84,20 @@ def final_return(metrics: pd.DataFrame, n_tail: int = 5) -> float:
     reduction this function exists for.
     """
     return float(metrics["eval_return_mean"].dropna().tail(n_tail).mean())
+
+
+def ordered_instances(df: pd.DataFrame) -> list[str]:
+    """Instance names in report order: family first, then difficulty.
+
+    Sorting the names alphabetically puts DoorKey-10 before DoorKey-5 and
+    Empty-16 before Empty-5, so difficulty does not read left to right -- and the
+    tables in results.md came out in a different order from the figures beside
+    them. Both now call this.
+    """
+    def key(env_id):
+        return (FAMILIES.index(env_id.split("-")[0]), difficulty_index(env_id))
+
+    return sorted(df["env_id"].unique(), key=key)
 
 
 def to_dataframe(runs: list[RunResult]) -> pd.DataFrame:
