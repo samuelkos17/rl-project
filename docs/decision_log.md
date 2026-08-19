@@ -2313,3 +2313,51 @@ whole.
 **What it means for the results:** nothing changes. One is a failure mode that
 had not happened yet, the other a sentence that had not been written yet. Both
 were cheaper to fix today than to notice on the 22nd.
+
+## 2026-08-19 — The pilot found three things in the figures that the fake data never could
+
+**Status:** Active
+
+**What happened:** we ran the real 16-run pilot for the first time and pointed the
+figure code at it. All seven figures appeared, but with two warnings and one
+silently wrong picture. None of these could have shown up on our fake dataset,
+because the fake dataset always contains all thirteen mazes and the pilot
+contains two.
+
+**1. A panel for a family that is not there.** Figures 1 and 2 always drew three
+columns, one per maze family. The pilot runs two of the three, so the third came
+out blank with meaningless numbers on its axis — and the legend, which we put on
+the last column, landed inside that empty one and disappeared. So the pilot's two
+most-read figures had no key telling you which colour was which strategy. The
+figures now have one column per family that actually has runs.
+
+**2. A deprecation that will become a crash.** With a single maze per family,
+matplotlib was handed one-element pandas tables where it expects plain numbers.
+It still works and warns; a future version will refuse. Fixed by handing it plain
+numbers.
+
+**3. A panel that was empty for a real reason and did not say so.** Rank
+stability compares the ordering of the four strategies on a hard maze against the
+ordering on an easy one. On DoorKey-5 in the pilot, all four strategies scored
+exactly zero — nothing solved it in 20,000 steps — so there is no ordering to
+compare and the number is undefined, correctly. The panel simply came out empty,
+which looks like a broken plot rather than a result. It now says "no variance:
+every strategy scored the same".
+
+**This one matters beyond the pilot.** Our own notes predict the same outcome on
+the hardest real mazes: if nothing ever solves DoorKey-10 or MultiRoom-N6, those
+panels would have been blank in the final report with no explanation.
+
+**One thing we are NOT changing, but everyone should know when reading pilot
+numbers.** Our headline score per run is "the average of the last five
+measurements", which smooths out one lucky evaluation. The pilot is short enough
+to have only four measurements in total, so that average covers the entire run —
+including the zeros from before the agent had learned anything. In the pilot one
+agent ends at 0.955 and gets reported as 0.477. On the real runs there are eighty
+measurements and the last five are all from the finished agent, so the number
+means what it says. We left the definition alone rather than special-casing it;
+the pilot is a plumbing test, not a source of results.
+
+**What it means for the results:** no number changes. Three figure defects fixed
+before they could reach the report, all found by ten minutes of real data that
+two days of fake data could not surface.

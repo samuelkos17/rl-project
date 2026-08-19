@@ -624,3 +624,41 @@ Both on `analysis/figures`. Suite **220 passed**.
 
 **Still open, not Daniel's:** the Boltzmann `tau` decision (`config.py` + spec
 §5.2) and the unverified 14x claim on the count-based bonus.
+
+---
+
+## The pilot ran, 2026-08-19 — pipeline works end to end, three figure fixes
+
+First real data through the whole chain. `configs/pilot.yaml` with
+`--workers 4`: 16 ok, 0 failed, ~2 min. Suite now **223 passed**.
+
+**Confirmed working:** `snapshot_every: 1000` gives 20 snapshots per run and
+`early_auc` computes for all 16. **The tau calibration works** — Boltzmann was
+0.064 against epsilon-greedy's 0.637 before, and is now level with it.
+
+**Three figure defects, all invisible on the synthetic fixture** because it always
+has all 13 instances and all 3 families:
+
+| defect | cause | fix |
+|---|---|---|
+| fig1/fig2 drew an empty third panel and lost the legend inside it | panels came from `FAMILIES`, not from the data | `_present_families(df)` + `_family_axes` |
+| `FutureWarning` from matplotlib | one instance per family hands it one-element Series (fig4 forest, fig6) | `.to_numpy()` |
+| fig6's DoorKey panel silently blank | all four strategies scored 0.0, so tau is undefined | `_degenerate_note` labels it "no variance" |
+
+The third one matters for the real sweep: if nothing solves DoorKey-10 or
+MultiRoom-N6, those panels would have been blank in the report with no
+explanation.
+
+**Read pilot `final_return` with care — it is not a final return.** It averages
+the last five evaluation points, and the pilot only has four in total, so it
+averages the whole curve including the pre-learning zeros. One Empty-5 run ends at
+**0.955** and is reported as **0.477**. Real runs have 80 eval points, so the
+definition is fine there; we did not special-case it.
+
+**Two observations from the pilot, NOT conclusions** — 20k steps is 5% of the real
+budget, 2 seeds, 2 easy mazes:
+- `count_based` scores 0.000 on Empty-5 where the other three reach the same value.
+- `early_auc_raw` is highest for **epsilon_greedy** (0.774 on Empty-5) and lowest
+  for `count_based` (0.283) — the opposite of the project hypothesis. At
+  `epsilon ~ 1.0` the baseline is near-random and covers ground fast, so this is
+  what one would expect this early. Worth re-checking on the real sweep.
