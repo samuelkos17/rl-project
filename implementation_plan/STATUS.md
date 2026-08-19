@@ -14,7 +14,7 @@ Last updated: **2026-08-19** (second update, after the tasks 1-4 review), by Dan
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
-| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets | — | 5 write-ups |
+| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets, ✅ knob calibration (`tau_start` 0.1 after pilot) | — | 5 write-ups |
 | **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures | — | 6 report scaffold |
 
 
@@ -310,10 +310,61 @@ argument, which points the same way.
 early episode drops from 11.42 to 2.28 against a maze reward of ~0.9.
 `noisy_sigma0` stays 0.5, `tau_decay_frac` stays 0.4, epsilon-greedy untouched.
 
-**These values are frozen. Changing any of them after the sweep means choosing our
-own result.** Full before/after in `docs/decision_log.md`, "The three of us agreed
-the knob values". A regression test now fails if the schedule ever goes back to
-being effectively random.
+**SUPERSEDED for `tau_start` ONLY — see the pilot-run section below.** `tau_start`
+is now **0.1**, not 0.01. `tau_end` 0.001, `count_beta` 0.01 and every other value
+above stand unchanged. The 28% -> 93% figures quoted above were computed against
+the trained Q-scale at both ends of the schedule, which is the error the pilot
+caught: at step 0 the scale is 7x wider, so 0.01 actually gave 86% — committed
+before learning anything. Full before/after in `docs/decision_log.md`, "The pilot
+run caught that we had over-corrected Boltzmann". A regression test now fails if
+the schedule goes back to being effectively random OR to being greedy at step 0.
+
+### 2026-08-19 (evening) — pilot run: `tau_start` 0.01 -> 0.1, and two items for you
+
+The 16-run pilot finished, 16 ok / 0 failed, all four contract files present in
+every run directory. `early_auc` returned a real number on all 16 — the
+`snapshot_every: 1000` fix works. Three things came out of it.
+
+**1. Mine, fixed. Boltzmann visited 4 of ~36 states on Empty-5** — one square,
+four directions, for 20k steps. `tau_start = 0.01` was calibrated against the
+*trained* Q-gap (0.0030), but a freshly initialised network's gap is **0.0206**,
+measured over 6 instances x 15 seeds (spread across instances < 0.002 — it is a
+property of the network init, not the maze). So at step 0 it gave p(best) = 0.86:
+committed to a random preference before learning anything.
+
+`tau_start` 0.01 -> **0.1**, giving p(best) 0.28 at step 0 and 0.95 at the end.
+Re-ran the 4 Boltzmann pilot runs to confirm rather than trusting the arithmetic:
+states visited went 4 -> 32 (Empty-5 seed1), 4 -> 24 (both DoorKey-5 seeds).
+Eval return was **0.000 in both arms**, so this was chosen on coverage, not on the
+outcome variable. Suite: 220 passed. Regression test now checks both ends of the
+schedule and fails on both historical values.
+
+**2. For Samuel — greedy eval scores 0 while training scores 0.9.** On Empty-5 all
+four strategies reach `train_return_mean` 0.88-0.95 but `eval_return_mean` 0.000.
+Reaching the goal always scores > 0.1, so exactly 0 means the eval episode timed
+out without ever reaching it. The behaviour policy solves the maze; the greedy
+policy does not. Most likely a deterministic cycle that a single random action
+would break.
+
+I read `evaluate()` (`src/rlx/train.py:61`) and could not find anything wrong with
+it — noise off, no bonus, pinned layout, all correct. My guess is 20k steps is
+just too short (5,000 gradient updates vs 100,000 in the real run), and one run
+did reach 0.955 and hold. **Not claiming this is a bug — flagging it because if it
+persists at 400k steps every strategy scores zero and we have no result.** Worth a
+single 400k-step run on Empty-5 before committing 3-4 hours to the full sweep.
+
+**3. For Daniel — `task_relevant_coverage` == `raw_coverage` on all 16 pilot
+runs.** Not a bug: on Empty-5 and DoorKey-5 the task-relevant mask covers 100% of
+free cells, so there is nothing to separate. It separates properly on bigger
+instances (DoorKey-8 0.65, DoorKey-10 0.47, MultiRoom-N2 0.02, MultiRoom-N6 0.09).
+
+But one case is structural rather than a size artefact: for the **whole Empty
+family** the two measures are identical at every size, Empty-16 included (ratio
+1.00, 196/196 cells). `_on_shortest_path` admits any cell with
+`d_start + d_goal == total`, and in a room with no walls every interior cell
+satisfies that. Correct by definition, but it means task-relevant coverage carries
+no information for 3 of our 13 instances. Probably worth one sentence in the
+report rather than a code change — your call, it is your module.
 
 The original discussion follows, kept for the record:
 
