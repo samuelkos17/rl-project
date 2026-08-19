@@ -2279,3 +2279,126 @@ measure only adds information for DoorKey and MultiRoom.
 `early_auc`, the project's main predictor, computed a real number on all 16 runs
 with no failures — which is the specific thing the pilot's snapshot fix was
 meant to enable.
+## 2026-08-19 — A half-written figure set was possible, and a label that would have lied
+
+**Status:** Active
+
+**Two small fixes found by reviewing the finished work rather than by a failing
+test. Neither changes a number.**
+
+**1. Regenerating the figures could leave the report showing two datasets at
+once.** The figure code checks whether every run is present — but it checked in
+the middle, while drawing figure 5. Figures 1 to 4 were already written to disk
+by then. So a sweep with one crashed run produced four fresh figures sitting
+beside three left over from an earlier render, with nothing saying so, and the
+report would have shown numbers from one dataset next to pictures from another.
+
+That is exactly the failure this log claimed was impossible three entries ago
+("regenerating from one command means the report can never end up showing a
+figure from an older version of the data"). It now checks before drawing
+anything, so a refused render leaves the folder untouched. There is a test that
+deletes a run and fails if any file appears.
+
+**2. The report generator was about to print something false.** It had a line
+reading "CI excludes zero: <value>", filled with a field that, since the review
+earlier today, means something else: our first hypothesis needs *two* things, and
+that field now reports whether both hold. On results where the interval excludes
+zero but the effect shrinks with difficulty, the report would have printed
+"CI excludes zero: False" — a plain false statement about the interval.
+
+Fixed in the plan before the code was written: the two conditions are now printed
+as two separate lines, one for the interval and one for the hypothesis as a
+whole.
+
+**What it means for the results:** nothing changes. One is a failure mode that
+had not happened yet, the other a sentence that had not been written yet. Both
+were cheaper to fix today than to notice on the 22nd.
+
+## 2026-08-19 — The pilot found three things in the figures that the fake data never could
+
+**Status:** Active
+
+**What happened:** we ran the real 16-run pilot for the first time and pointed the
+figure code at it. All seven figures appeared, but with two warnings and one
+silently wrong picture. None of these could have shown up on our fake dataset,
+because the fake dataset always contains all thirteen mazes and the pilot
+contains two.
+
+**1. A panel for a family that is not there.** Figures 1 and 2 always drew three
+columns, one per maze family. The pilot runs two of the three, so the third came
+out blank with meaningless numbers on its axis — and the legend, which we put on
+the last column, landed inside that empty one and disappeared. So the pilot's two
+most-read figures had no key telling you which colour was which strategy. The
+figures now have one column per family that actually has runs.
+
+**2. A deprecation that will become a crash.** With a single maze per family,
+matplotlib was handed one-element pandas tables where it expects plain numbers.
+It still works and warns; a future version will refuse. Fixed by handing it plain
+numbers.
+
+**3. A panel that was empty for a real reason and did not say so.** Rank
+stability compares the ordering of the four strategies on a hard maze against the
+ordering on an easy one. On DoorKey-5 in the pilot, all four strategies scored
+exactly zero — nothing solved it in 20,000 steps — so there is no ordering to
+compare and the number is undefined, correctly. The panel simply came out empty,
+which looks like a broken plot rather than a result. It now says "no variance:
+every strategy scored the same".
+
+**This one matters beyond the pilot.** Our own notes predict the same outcome on
+the hardest real mazes: if nothing ever solves DoorKey-10 or MultiRoom-N6, those
+panels would have been blank in the final report with no explanation.
+
+**One thing we are NOT changing, but everyone should know when reading pilot
+numbers.** Our headline score per run is "the average of the last five
+measurements", which smooths out one lucky evaluation. The pilot is short enough
+to have only four measurements in total, so that average covers the entire run —
+including the zeros from before the agent had learned anything. In the pilot one
+agent ends at 0.955 and gets reported as 0.477. On the real runs there are eighty
+measurements and the last five are all from the finished agent, so the number
+means what it says. We left the definition alone rather than special-casing it;
+the pilot is a plumbing test, not a source of results.
+
+**What it means for the results:** no number changes. Three figure defects fixed
+before they could reach the report, all found by ten minutes of real data that
+two days of fake data could not surface.
+
+## 2026-08-19 — On the smallest maze our main measurement cannot tell anything apart
+
+**Status:** Active
+
+**What we found:** re-running the pilot after the temperature correction, two
+strategies came out with *exactly* the same early-coverage number on Empty-5.
+That is not a coincidence and not a bug.
+
+Empty-5 has nine walkable squares. With four directions to face, that is 36
+distinct situations the agent can be in. Both strategies had seen 32 of them
+after **one thousand steps** and never saw another one after that — the missing
+four are almost certainly at the goal square, which ends the episode the moment
+the agent steps on it, so it is only ever seen from one direction.
+
+```
+boltzmann       coverage at 1k / 2k / 3k / 4k steps = 0.889  0.889  0.889  0.889
+epsilon-greedy  coverage at 1k / 2k / 3k / 4k steps = 0.889  0.889  0.889  0.889
+```
+
+**Why it matters.** Our central measurement is "how much of the maze did the
+agent see early on", and we compare that against how well it eventually scores.
+On Empty-5 every strategy sees everything almost immediately, so that measurement
+is the same number for all of them and can predict nothing. There is no effect to
+find there — not because exploration does not matter, but because the maze is too
+small for the question to have an answer.
+
+**This is the maze, not the short test run.** Empty-5 will be exhausted inside the
+first one percent of a full-length run too.
+
+**It agrees with what we already saw on the fake data**, where Empty-5 was the
+weakest of the thirteen and the only instance whose confidence interval included
+zero.
+
+**What it means for the results:** the report should say this in the limitations
+section rather than let Empty-5 turn up later as a weak result that needs
+explaining away. The honest sentence is: on the smallest instances the coverage
+measure runs out of room before the early window closes, so it has no
+discriminating power there, and the hypothesis can only be tested where the maze
+is big enough for strategies to differ. Nothing about the other twelve instances
+changes.

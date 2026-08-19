@@ -603,3 +603,106 @@ heatmaps look nearly identical, because the generator fills almost every reachab
 cell by the last snapshot regardless of strategy. That is the fixture, not the
 figure. If the real runs behave the same way, the honest fix is to draw an
 **earlier** snapshot, not to rescale the picture.
+
+---
+
+## Two follow-ups after the task 5 review, 2026-08-19
+
+Both on `analysis/figures`. Suite **220 passed**.
+
+- **`make_all_figures` now validates before drawing.** It called `_score_matrices`
+  only inside fig5, so an incomplete run matrix left fig1–fig4 on disk beside
+  stale fig5–fig7 from an earlier render. Reproduced by deleting
+  `DoorKey-8/noisy/seed3`; covered by
+  `test_nothing_is_written_when_the_run_matrix_has_a_hole`.
+- **`06-report-scaffold.md` amended before task 6 starts.** Its draft printed
+  `confirms_h1` under the label "CI excludes zero", which stopped being true when
+  `confirms_h1` began requiring the difficulty trend as well. The label now uses
+  `ci_excludes_zero` and the hypothesis verdict is a separate line. The banner at
+  the top of that file also points task 6 at `compare_coverage_predictors` for
+  H2, at `performance_profile`, and at the new per-instance CI columns.
+
+**Settled since:** the Boltzmann `tau` values and `count_beta` were agreed by all
+three on 2026-08-19 and then `tau_start` corrected once more to 0.1 after the
+pilot (`config.py`, spec §5.2). See `docs/decision_log.md`.
+
+---
+
+## The pilot ran twice, 2026-08-19 — pipeline works end to end, three figure fixes
+
+First real data through the whole chain. `configs/pilot.yaml` with
+`--workers 4`: 16 ok, 0 failed, ~2 min per run of the sweep.
+
+**Read the second run's numbers, not the first.** The first pilot used
+`tau_start = 0.01`; that value was withdrawn as an over-correction the same day
+and is now **0.1**. Every number below is from the re-run. `config.json` in each
+run directory records the resolved config, so which settings produced a result is
+always recoverable — that is what the §5 contract is for.
+
+**Confirmed working:** `snapshot_every: 1000` gives 20 snapshots per run and
+`early_auc` computes for all 16.
+
+### The tau correction shows up in coverage, which is the right place to see it
+
+`early_auc_raw`, first pilot in brackets:
+
+| strategy | DoorKey-5 | Empty-5 |
+|---|---|---|
+| `boltzmann` | **0.621** (0.125) | **0.774** (0.330) |
+| `count_based` | 0.259 (0.259) | 0.283 (0.283) |
+| `epsilon_greedy` | 0.527 (0.527) | 0.774 (0.774) |
+| `noisy` | 0.496 (0.496) | 0.490 (0.490) |
+
+Boltzmann goes from the narrowest coverage of the four to the widest. The other
+three are **bit-identical** across the two runs — only `tau` changed, and the
+seeding holds — which is a free reproducibility check on the whole chain.
+
+### Empty-5 cannot discriminate on early coverage, and that is structural
+
+Empty-5 has 9 walkable cells x 4 directions = 36 states. Both `boltzmann` and
+`epsilon_greedy` sit at **0.889 from step 1000 onward** — 32 of 36 states, the
+missing four almost certainly at the goal cell, which ends the episode on entry:
+
+```
+boltzmann      seed1  coverage at 1k/2k/3k/4k = [0.889 0.889 0.889 0.889]
+epsilon_greedy seed1  coverage at 1k/2k/3k/4k = [0.889 0.889 0.889 0.889]
+```
+
+The whole early-AUC window is inside the saturated region, so the project's main
+predictor has no variance to work with there. **This is a property of the maze,
+not of the 20k budget** — Empty-5 will saturate within the first percent of a
+400k run too. It matches what the fixture already showed (Empty-5 was the weakest
+instance at rho +0.13, p 0.58, its CI straddling zero in fig4's forest panel).
+
+**This belongs in report §8, Limitations (Daniel's section):** on the smallest
+instances the coverage measure saturates before the early window closes, so it
+cannot predict anything there. Saying so is more honest than presenting it later
+as a weak result.
+
+### Three figure defects, all invisible on the synthetic fixture
+
+because it always has all 13 instances and all 3 families:
+
+| defect | cause | fix |
+|---|---|---|
+| fig1/fig2 drew an empty third panel and lost the legend inside it | panels came from `FAMILIES`, not from the data | `_present_families(df)` + `_family_axes` |
+| `FutureWarning` from matplotlib | one instance per family hands it one-element Series (fig4 forest, fig6) | `.to_numpy()` |
+| fig6's DoorKey panel silently blank | all four strategies scored 0.0, so tau is undefined | `_degenerate_note` labels it "no variance" |
+
+The third matters for the real sweep: if nothing solves DoorKey-10 or
+MultiRoom-N6, those panels would have been blank in the report with no
+explanation.
+
+### Read pilot `final_return` with care — it is not a final return
+
+It averages the last five evaluation points, and the pilot has only four in
+total, so it averages the whole curve including the pre-learning zeros. One
+Empty-5 run ends at **0.955** and is reported as **0.477**. Real runs have 80
+eval points, so the definition is fine there; we did not special-case it.
+
+### Corroborating Max's finding for Samuel
+
+On Empty-5, **6 of 8 runs end at exactly 0.000** and two at 0.955, while training
+return sits near 0.9. The agent solves the maze while exploring and fails under
+greedy evaluation. Expected at 20k steps; at 400k it would mean no result at all.
+Max flagged it, this run agrees.

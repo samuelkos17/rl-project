@@ -1,10 +1,14 @@
+import shutil
+import warnings
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from rlx.analysis.figures import COLORS, FIGURE_NAMES, make_all_figures
+from rlx.analysis.figures import (
+    COLORS, FIGURE_NAMES, _degenerate_note, make_all_figures,
+)
 from rlx.exploration import STRATEGIES
 
 #: Resolved from this file, not the working directory, so the suite passes no
@@ -67,3 +71,71 @@ def test_an_empty_results_directory_is_refused(tmp_path):
     later; say what is wrong at the point where it is knowable."""
     with pytest.raises(ValueError, match="no runs"):
         make_all_figures(tmp_path, tmp_path / "out")
+
+
+def test_nothing_is_written_when_the_run_matrix_has_a_hole(synthetic, tmp_path):
+    """fig5 needs a complete (seeds x instances) matrix, and it used to discover
+    a missing run only when it got there -- after fig1 to fig4 were already on
+    disk. report/figures/ would then hold four fresh figures beside three stale
+    ones from an earlier render, and the report would show two different
+    datasets side by side. Fail before writing anything instead."""
+    incomplete = tmp_path / "runs"
+    shutil.copytree(synthetic, incomplete)
+    shutil.rmtree(incomplete / "DoorKey-8" / "noisy" / "seed3")
+    out = tmp_path / "figs"
+
+    with pytest.raises(ValueError, match="missing"):
+        make_all_figures(incomplete, out)
+
+    assert not list(out.glob("*.pdf")) and not list(out.glob("*.png")), \
+        "a refused render must leave no half-written figure set behind"
+
+
+@pytest.fixture(scope="module")
+def two_instances(synthetic, tmp_path_factory):
+    """The pilot's shape: one instance in each of two families, no MultiRoom.
+
+    configs/pilot.yaml really produces this, so it is a supported input, not a
+    hypothetical.
+    """
+    out = tmp_path_factory.mktemp("pilotshape")
+    for name in ("Empty-5", "DoorKey-5"):
+        shutil.copytree(synthetic / name, out / name)
+    return out
+
+
+def test_a_missing_family_leaves_no_empty_panel_and_keeps_the_legend(two_instances, tmp_path):
+    """The pilot runs two of the three families, so fig1 and fig2 drew a third
+    panel with no data in it -- autoscaled to nonsense ticks -- and the legend,
+    which sat on the last panel, landed inside that empty one and vanished.
+
+    A single instance per family also handed matplotlib one-element pandas
+    Series, which it deprecates and will later reject outright.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        make_all_figures(two_instances, tmp_path)
+
+    messages = [str(w.message) for w in caught]
+    assert not [m for m in messages if "No artists with labels" in m], messages
+    assert not [m for m in messages if "single element Series" in m], messages
+    for name in FIGURE_NAMES:
+        assert (tmp_path / f"{name}.png").exists(), name
+
+
+def test_a_family_with_no_ranking_is_labelled_not_left_blank():
+    """Kendall's tau is undefined when every strategy scores the same, which the
+    pilot hits on DoorKey-5 and the real sweep may hit on DoorKey-10 and
+    MultiRoom-N6. An empty panel reads as a broken plot; the project's rule is
+    "no variance, excluded", never a silent NaN."""
+    import numpy as np
+    import pandas as pd
+
+    degenerate = pd.DataFrame({"difficulty": [5], "tau": [np.nan]})
+    partial = pd.DataFrame({"difficulty": [5, 8], "tau": [np.nan, 1.0]})
+    ranked = pd.DataFrame({"difficulty": [5, 8], "tau": [1.0, 0.5]})
+
+    assert _degenerate_note(degenerate) is not None
+    assert "variance" in _degenerate_note(degenerate)
+    assert _degenerate_note(partial) is None
+    assert _degenerate_note(ranked) is None

@@ -24,7 +24,7 @@ from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
 from rlx.analysis.aggregate import RunResult, load_all  # noqa: E402
 from rlx.analysis.coverage import raw_coverage, task_relevant_coverage  # noqa: E402
 from rlx.analysis.stats import (  # noqa: E402
-    aggregate_correlation, build_analysis_table, iqm_by_strategy,
+    _score_matrices, aggregate_correlation, build_analysis_table, iqm_by_strategy,
     performance_profile, rank_stability, within_instance_correlation,
 )
 from rlx.envs import grid_info  # noqa: E402
@@ -108,6 +108,38 @@ def _ordered_instances(df: pd.DataFrame) -> list[str]:
     return order["env_id"].tolist()
 
 
+def _present_families(df: pd.DataFrame) -> tuple:
+    """The families that actually have runs, in the fixed report order.
+
+    configs/pilot.yaml runs two of the three, and drawing a panel for the absent
+    one left an empty axis autoscaled to nonsense ticks -- with the legend, which
+    goes on the last panel, stranded inside it.
+    """
+    return tuple(family for family in FAMILIES if (df["family"] == family).any())
+
+
+def _family_axes(families: tuple, height: float = 4.0):
+    """One panel per present family, sized so a two-family figure is not stretched."""
+    fig, axes = plt.subplots(1, len(families), figsize=(5 * len(families), height),
+                             sharey=True, squeeze=False)
+    return fig, axes[0]
+
+
+def _degenerate_note(group: pd.DataFrame) -> str | None:
+    """Label for a family whose rank correlations are all undefined, else None.
+
+    Kendall's tau needs two different rankings to compare. When every strategy
+    scores the same on every instance of a family -- which happens as soon as
+    nothing solves the maze -- there is no ranking and tau is NaN for the whole
+    family. Left alone the panel is simply empty, which reads as a broken plot
+    rather than as a result. The project's rule is "no variance, excluded",
+    never a silent NaN.
+    """
+    if group["tau"].isna().all():
+        return "no variance:\nevery strategy scored\nthe same"
+    return None
+
+
 def _step_axis(ax) -> None:
     """Label the x axis in thousands of steps.
 
@@ -121,8 +153,9 @@ def _step_axis(ax) -> None:
 
 def fig1_learning_curves(runs, df, out_dir) -> None:
     """Return over training, one panel per family, bootstrap CI across runs."""
-    fig, axes = plt.subplots(1, len(FAMILIES), figsize=(15, 4), sharey=True)
-    for ax, family in zip(axes, FAMILIES):
+    families = _present_families(df)
+    fig, axes = _family_axes(families)
+    for ax, family in zip(axes, families):
         for strategy in COLORS:
             group = [r for r in runs
                      if r.strategy == strategy and r.env_id.startswith(family)]
@@ -144,11 +177,10 @@ def fig1_learning_curves(runs, df, out_dir) -> None:
 
 def fig2_difficulty_curve(runs, df, out_dir) -> None:
     """Final return against difficulty. The curve the professor asked for."""
-    fig, axes = plt.subplots(1, len(FAMILIES), figsize=(15, 4), sharey=True)
-    for ax, family in zip(axes, FAMILIES):
+    families = _present_families(df)
+    fig, axes = _family_axes(families)
+    for ax, family in zip(axes, families):
         family_rows = df[df["family"] == family]
-        if family_rows.empty:
-            continue
         ticks = sorted(family_rows["difficulty"].unique())
         # Four strategies share every x position, so their intervals would sit on
         # top of each other. Nudge them apart by a fraction of the axis span.
@@ -239,9 +271,13 @@ def fig4_coverage_vs_return(runs, df, out_dir) -> None:
     # already mean something else in the two panels to the left, and reusing them
     # here for families inside the same figure would be genuinely misleading.
     for marker, (family, group) in zip("os^", forest.groupby("family")):
+        # .to_numpy() throughout: a family with one instance would otherwise hand
+        # matplotlib one-element Series, which it deprecates and will later reject.
+        rho = group["rho"].to_numpy()
         axes[2].errorbar(
-            group["rho"], group.index.to_numpy(),
-            xerr=[group["rho"] - group["rho_ci_low"], group["rho_ci_high"] - group["rho"]],
+            rho, group.index.to_numpy(),
+            xerr=[rho - group["rho_ci_low"].to_numpy(),
+                  group["rho_ci_high"].to_numpy() - rho],
             fmt=marker, ms=4, capsize=2, lw=1.2, color="#333333",
             markerfacecolor="white", label=family)
     axes[2].axvline(0, color="black", lw=0.8, ls=":")
@@ -316,13 +352,25 @@ def fig6_rank_stability(runs, df, out_dir) -> None:
     two numbers meant the same thing.
     """
     stability = rank_stability(df)
-    fig, axes = plt.subplots(1, len(FAMILIES), figsize=(13, 3.8), sharey=True)
-    for ax, family in zip(axes, FAMILIES):
+    families = _present_families(df)
+    fig, axes = _family_axes(families, height=3.8)
+    for ax, family in zip(axes, families):
         group = stability[stability["family"] == family].sort_values("difficulty")
-        if not group.empty:
-            ax.plot(group["difficulty"], group["tau"], marker="o", color="#333333",
-                    lw=1.6, ms=5)
-            ax.set_xticks(group["difficulty"].tolist())
+        # .to_numpy(): a family with a single instance hands matplotlib a
+        # one-element Series, which it deprecates and will later reject outright.
+        note = _degenerate_note(group)
+        if note:
+            # Boxed, because the zero line runs straight through the middle of
+            # the panel and would otherwise strike the text through.
+            ax.text(0.5, 0.5, note, transform=ax.transAxes, ha="center",
+                    va="center", fontsize=9, color="#777777",
+                    bbox=dict(facecolor="white", edgecolor="none", pad=3))
+            span = group["difficulty"]
+            ax.set_xlim(span.min() - 1, span.max() + 1)
+        else:
+            ax.plot(group["difficulty"].to_numpy(), group["tau"].to_numpy(),
+                    marker="o", color="#333333", lw=1.6, ms=5)
+        ax.set_xticks(group["difficulty"].tolist())
         ax.axhline(0, color="black", lw=0.8, ls=":")
         ax.set_ylim(-1.15, 1.15)
         ax.set_xlabel(DIFFICULTY_LABEL[family])
@@ -373,11 +421,21 @@ def fig7_visitation_heatmaps(runs, df, out_dir, env_id: str | None = None,
 
 
 def make_all_figures(results_root: Path, out_dir: Path) -> None:
-    """Render every report figure from a results tree."""
+    """Render every report figure from a results tree.
+
+    Everything that can reject the data does so BEFORE the first figure is
+    written. fig5 needs a complete (seeds x instances) matrix and used to find a
+    hole only once it got there, leaving four fresh figures on disk beside three
+    stale ones from an earlier render -- so the report would have shown two
+    different datasets side by side without saying so.
+    """
     runs = load_all(Path(results_root))
     if not runs:
         raise ValueError(f"no runs found under {results_root}")
     df = build_analysis_table(runs)
+    # Pre-flight for fig5. Private, but same package, and running it here costs
+    # one pivot per strategy against the 2000 bootstrap resamples fig5 would do.
+    _score_matrices(df)
     for draw in (fig1_learning_curves, fig2_difficulty_curve, fig3_coverage_curves,
                  fig4_coverage_vs_return, fig5_iqm, fig6_rank_stability,
                  fig7_visitation_heatmaps):
