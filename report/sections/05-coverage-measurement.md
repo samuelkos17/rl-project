@@ -141,9 +141,12 @@ needlessly coarse trapezoid for the study's principal predictor.
 
 Curves are integrated from step 0, where coverage is taken to be zero. No run has
 a snapshot at step 0, and normalising instead by the span of the observed
-snapshots — 10,000 to 80,000 rather than 0 to 80,000 — inflates the result by
-12.5%. Treating the origin as zero understates it by the agent's single starting
-state, whose effect on the integral is about 0.2%.
+snapshots — 10,000 to 80,000 rather than 0 to 80,000 — inflates the result. By how
+much depends on the shape of the curve, because integrating from the origin also
+adds a first trapezoid that partly offsets the smaller divisor: 12.5% on a
+straight line, 10.9% on a saturating curve of the kind these runs produce, 6.7%
+on one already flat. Treating the origin as zero understates the result by the
+agent's single starting state, whose effect on the integral is about 0.2%.
 
 The AUC is computed for both coverage definitions, giving `early_auc_raw` and
 `early_auc_task` for every run.
@@ -183,7 +186,8 @@ last five evaluation points of a run.
 *Reproducing the numbers in this section.* The denominator table comes from
 `rlx.envs.reachable_mask` and `rlx.analysis.coverage.task_relevant_mask`
 evaluated on `grid_info(env_id, layout_seed=seed)` for seeds 0–4. The pilot
-goal-counter check and the 12.5% and 0.2% figures are recorded in
-`docs/decision_log.md` under "The goal square was in the denominator and could
-never be reached" and "A full review of tasks 1-4 found nine things". Everything
+goal-counter check and the 0.2% figure are recorded in `docs/decision_log.md`
+under "The goal square was in the denominator and could never be reached" and "A
+full review of tasks 1-4 found nine things"; the three normalisation figures
+under "The normalisation error is not one number". Everything
 else in this section is fixed in `src/rlx/config.py`.

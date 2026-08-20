@@ -2713,3 +2713,51 @@ also identical, on others they differ by half. So the raw-versus-task-relevant
 question is answered by the larger DoorKey and MultiRoom layouts and by nothing
 else, and the report says so where the result is printed rather than in a
 footnote.
+
+---
+
+## 2026-08-20 — The normalisation error is not one number
+
+**Status:** Active
+
+**What this is:** a correction to a sentence, not to any code or any result. No
+number that goes in the results changes.
+
+Our main predictor is early coverage: we take the coverage curve over the first
+80,000 steps of a run and turn it into a single number by measuring the area
+under it. To keep that number between 0 and 1, we divide by the width of the
+window — the full 80,000 steps.
+
+There is a tempting alternative that is wrong: dividing by the distance between
+the first and the last measurement instead, 10,000 to 80,000, which is only
+70,000 steps. Dividing by a smaller number makes the result bigger. Both the
+report's Section 5.4 and the docstring in `src/rlx/analysis/coverage.py` said
+this alternative "inflates the result by 12.5%", as if that were a fixed
+property of the settings.
+
+**It is not fixed — it depends on the shape of the curve**, and 12.5% is the
+largest of the three cases we measured:
+
+| coverage curve | how much too high the wrong version reads |
+|---|---|
+| a straight line | 12.5% |
+| a curve that rises then levels off (what real runs look like) | 10.9% |
+| already flat | 6.7% |
+
+The reason is that the two versions differ in *two* ways, not one. The correct
+version divides by the bigger number, which makes it smaller — but it also
+measures the area starting from step 0 rather than from step 10,000, which adds a
+slice of area the other version leaves out. The two effects push in opposite
+directions, and how much the added slice is worth depends on how fast coverage
+was rising at the very start. On a flat curve the added slice is large and nearly
+cancels the divisor; on a straight line from zero it is small and barely does.
+
+**Why we bothered.** 12.5% is right for one specific curve shape and the report
+stated it as though it were right for all of them. The professor can recompute
+this. Saying "between 6.7% and 12.5%, depending on the curve" costs one sentence
+and is true.
+
+**Reproduce it** with three curves over `steps = 10_000 .. 80_000` in steps of
+10,000 at `total_steps = 400_000`: `1 - exp(-steps/25_000)`, `steps/160_000`, and
+a constant 0.9. Compare `early_auc(steps, cov, 400_000)` against
+`trapezoid(cov, steps) / (steps[-1] - steps[0])`.
