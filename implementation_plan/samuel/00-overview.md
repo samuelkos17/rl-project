@@ -49,7 +49,7 @@ python -m rlx.train --env-id DoorKey-5 --strategy epsilon_greedy --seed 0 --tota
 completes, writes a schema-valid `results/DoorKey-5/epsilon_greedy/seed0/`, and
 
 ```bash
-python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 8
+python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 12
 ```
 
 runs a third of the matrix in parallel, skipping anything already done.

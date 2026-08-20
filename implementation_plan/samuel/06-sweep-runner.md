@@ -86,7 +86,7 @@ Expected: `ModuleNotFoundError: No module named 'rlx.sweep'`.
 ```python
 """Run the experiment matrix in parallel, sharded across machines.
 
-Each machine runs:   python -m rlx.sweep --config configs/main.yaml --shard i/3 --workers 8
+Each machine runs:   python -m rlx.sweep --config configs/main.yaml --shard i/3 --workers 12
 
 Shards partition a deterministically ordered matrix, so the three machines never
 need to talk to each other. Any run whose result directory already exists is
@@ -194,7 +194,7 @@ wrong — fix the config, not the code.
 - [x] **Step 6: Time a small real sweep**
 
 ```bash
-python -m rlx.sweep --config configs/pilot.yaml --shard 0/1 --workers 8
+python -m rlx.sweep --config configs/pilot.yaml --shard 0/1 --workers 12
 ```
 
 First create `configs/pilot.yaml` — the same shape as `main.yaml` but tiny, for
@@ -246,7 +246,7 @@ git commit -m "feat: sharded parallel sweep runner"
 One command per machine, run them at the same time:
 
 ```bash
-python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 8
+python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 12
 ```
 
 Machine 2 uses `--shard 1/3`, machine 3 uses `--shard 2/3`. When all three

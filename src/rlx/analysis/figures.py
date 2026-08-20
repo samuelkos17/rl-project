@@ -209,7 +209,10 @@ def fig2_difficulty_curve(runs: list[RunResult], df: pd.DataFrame,
         ax.set_xticks(ticks)
         ax.set_xlabel(DIFFICULTY_LABEL[family])
         ax.set_title(family, fontsize=10)
-    axes[0].set_ylabel("Final return (0-1)")
+    # "Mean", explicitly: fig5 plots the IQM of the same quantity, and an
+    # unqualified "final return" on both invites cross-reading two bar heights
+    # that are not the same statistic.
+    axes[0].set_ylabel("Mean final return (0-1)")
     _legend(axes[-1])
     _save(fig, out_dir, "fig2_difficulty_curve")
 

@@ -99,7 +99,14 @@ principle, because its random choices are not *uniformly* random.
 
 **Temperature (tau)** — the knob controlling Boltzmann. High temperature makes
 all actions nearly equally likely (lots of exploration). Low temperature makes it
-nearly greedy. We decay tau from 1.0 to 0.05 over the first 40% of training.
+nearly greedy. We decay tau from 0.1 to 0.001 over the first 40% of training.
+
+Those look like very small numbers, and that is the point. What counts is not
+tau on its own but tau compared to how far apart the agent's action values are,
+and in MiniGrid those differences are tiny — about 0.02 at the start of training
+and 0.003 by the end. A temperature of 1.0 would be enormous next to a gap of
+0.003, so the agent would pick more or less at random for the entire run. (This
+entry said 1.0 to 0.05 until 2026-08-20, before we had measured the gaps.)
 
 **Intrinsic reward / bonus** — extra reward the agent gives *itself* for doing
 something interesting (in our case, visiting somewhere unfamiliar), on top of the

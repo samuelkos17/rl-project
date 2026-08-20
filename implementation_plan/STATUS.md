@@ -545,7 +545,31 @@ python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 12
 ```
 Samuel `0/3`, Max `1/3`, Daniel `2/3`. 87/87/86 runs. Expect **3-4 hours**.
 Safe to re-run: finished runs are skipped, so a crash resumes where it stopped.
-**Do not launch until `count_beta` is decided.**
+~~Do not launch until `count_beta` is decided.~~ **RESOLVED 2026-08-19** —
+`count_beta = 0.01` in `config.py`; see line 385 and `docs/decision_log.md`.
+
+~~BLOCKER 2026-08-20 — count-based bonus keying.~~ **RESOLVED 2026-08-20.** The
+bonus is now paid on `N(s')`, the observation the agent arrives at, rather than
+`N(s)`, the one it leaves. Decided on a 27-run measurement (3 variants x 3
+instances x 3 seeds, 50k steps, coverage only — evaluation return was never
+collected): successor keying gave 8.4% more area under the coverage curve, better
+on 8 of 9 paired runs, sign test `p = 0.0195`. `N(s, a)` scored the same but was
+rejected because it would require changing the frozen `Explorer` interface.
+Implemented in `src/rlx/train.py`; pinned by
+`tests/test_train.py::test_count_bonus_is_keyed_on_the_successor_observation`.
+Full reasoning, including the argument that initially pointed the other way, is
+in `docs/decision_log.md` under "Where the count-based bonus is paid".
+
+**Nothing now blocks the sweep.**
+
+**Sanity check PASSED 2026-08-20.** The 400k Empty-5 run this file asked for at
+line 433 has been done: greedy evaluation first succeeds at step 45,000 and
+reaches 0.955. The pilot's all-zero evaluation was a too-short pilot, not a bug.
+The sweep will produce real numbers. One caveat found in the same run: greedy
+evaluation still returns exactly 0.000 on about a quarter of checks even after
+the agent has learned the maze, which adds noise to `final_return`. That is
+changeable at analysis time and does not block the sweep — see
+`docs/decision_log.md`, "The 400k sanity run".
 
 **The pipeline is verified end to end.** A real 20k-step run on Empty-5 reached
 a score of 0.955, and **Daniel's `load_all` read the result folder our training

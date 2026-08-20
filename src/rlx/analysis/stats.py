@@ -24,6 +24,13 @@ N_BOOTSTRAP = 10_000
 #: 2000 is enough for a 95% percentile interval and keeps the analysis snappy.
 N_BOOTSTRAP_RHO = 2_000
 
+#: Above this share of undefined resamples, _bootstrap_spearman_ci reports no
+#: interval instead of one conditioned on the resamples that stayed defined.
+#: 0.20 is a judgement call, not a derived value: at 20% the surviving four
+#: fifths still describe the instance, and past it they increasingly describe
+#: only the runs that happened to break the tie.
+MAX_DEGENERATE_FRACTION = 0.20
+
 
 def build_analysis_table(runs: list[RunResult]) -> pd.DataFrame:
     """One row per run: identity, final return, and both early-coverage AUCs.
@@ -71,8 +78,23 @@ def _bootstrap_spearman_ci(x: np.ndarray, y: np.ndarray,
         rho = ((rx * ry).sum(axis=1) /
                np.sqrt((rx ** 2).sum(axis=1) * (ry ** 2).sum(axis=1)))
     # A resample can draw the same run 20 times, leaving a constant column whose
-    # correlation is undefined. Those are dropped, not counted as zero.
-    rho = rho[np.isfinite(rho)]
+    # correlation is undefined.
+    #
+    # Dropping those and taking percentiles of the rest is NOT a 95% interval:
+    # it conditions on the resamples that happened to stay non-degenerate. On a
+    # hard instance where 19 of 20 runs score exactly 0.0 -- which the design
+    # expects at the hard end of every family -- 36% of resamples are degenerate,
+    # and every surviving one is a resample that retained the single solved run.
+    # That is conditioning on the event carrying the whole signal, then reporting
+    # the result as if it were unconditional.
+    #
+    # So past a threshold we report no interval at all, exactly as the caller
+    # already does for an instance with no variance. Refusing to answer is the
+    # honest output; an interval quietly conditioned on its own signal is not.
+    finite = np.isfinite(rho)
+    if finite.mean() < 1.0 - MAX_DEGENERATE_FRACTION:
+        return np.nan, np.nan
+    rho = rho[finite]
     if len(rho) == 0:
         return np.nan, np.nan
     return float(np.percentile(rho, 2.5)), float(np.percentile(rho, 97.5))
@@ -208,12 +230,19 @@ def compare_coverage_predictors(df: pd.DataFrame, seed: int = 0) -> dict:
 
 
 def _iqm(values: np.ndarray) -> float:
-    """Interquartile mean: drop the top and bottom 25%, average the middle."""
+    """Interquartile mean, computed exactly as rliable computes it.
+
+    Must be trim_mean, not a percentile filter. Selecting everything between
+    the 25th and 75th percentiles keeps far MORE than the middle half as soon
+    as values tie, and real returns tie constantly: a run that never reaches
+    the goal scores exactly 0.0. On [0.0, 0.0, 0.90, 0.92, 0.95] -- 3 of 5
+    seeds solving -- the percentile filter gives 0.455 where rliable gives
+    0.607. build_report prints this beside rliable_aggregate under one heading,
+    so the two must be the same estimator.
+    """
     if len(values) == 0:
         return np.nan
-    lo, hi = np.percentile(values, [25, 75])
-    middle = values[(values >= lo) & (values <= hi)]
-    return float(middle.mean()) if len(middle) else float(values.mean())
+    return float(stats.trim_mean(values, 0.25))
 
 
 def iqm_by_strategy(df: pd.DataFrame, env_id: str, seed: int = 0) -> dict:
@@ -277,12 +306,25 @@ def probability_of_improvement(df: pd.DataFrame, a: str, b: str) -> float:
     Ties count half, so two identical strategies score 0.5 rather than 0.0. That
     matters here: MiniGrid returns are heavily tied at exactly 0.0 on the mazes
     nothing solves, and scoring those as "a loses" would be wrong.
+
+    Computed WITHIN each instance and then averaged, never pooled -- the same
+    rule as every other comparison in this module, for the same reason. Pooling
+    compares a run of `a` on DoorKey-5 against a run of `b` on DoorKey-10, so a
+    strategy that wins on every instance can still score below 0.5 purely
+    because the instances differ in difficulty. On a two-instance family where
+    `a` beats `b` everywhere, pooling gives 0.75 against the true 1.0.
     """
-    x = df[df["strategy"] == a]["final_return"].to_numpy()
-    y = df[df["strategy"] == b]["final_return"].to_numpy()
-    if len(x) == 0 or len(y) == 0:
+    per_instance = []
+    for _, group in df.groupby("env_id", sort=True):
+        x = group[group["strategy"] == a]["final_return"].to_numpy()
+        y = group[group["strategy"] == b]["final_return"].to_numpy()
+        if len(x) == 0 or len(y) == 0:
+            continue
+        per_instance.append((x[:, None] > y[None, :]).mean()
+                            + 0.5 * (x[:, None] == y[None, :]).mean())
+    if not per_instance:
         return float("nan")
-    return float((x[:, None] > y[None, :]).mean() + 0.5 * (x[:, None] == y[None, :]).mean())
+    return float(np.mean(per_instance))
 
 
 @contextmanager

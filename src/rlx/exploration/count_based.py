@@ -31,8 +31,13 @@ class CountBased(Explorer):
         self.counts[count_key] += 1
 
     def intrinsic_bonus(self, count_key: Hashable) -> float:
+        # .get() rather than self.counts[key]: counts is a defaultdict, so a bare
+        # lookup INSERTS a zero entry, and distinct_keys would then report every
+        # key ever asked about rather than every key actually observed. Harmless
+        # in the real loop, which observes before it pays, but it made the metric
+        # depend on call order for no reason.
         # max(count, 1) keeps an unseen key finite instead of dividing by zero.
-        bonus = self.cfg.count_beta / np.sqrt(max(self.counts[count_key], 1))
+        bonus = self.cfg.count_beta / np.sqrt(max(self.counts.get(count_key, 0), 1))
         self._recent_bonuses.append(bonus)
         if len(self._recent_bonuses) > 1000:
             del self._recent_bonuses[:-1000]

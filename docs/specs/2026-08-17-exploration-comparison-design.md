@@ -61,7 +61,7 @@ the report can point at it.
 | Turn the hypothesis into a quantitative test (early-coverage AUC vs final return) | §7.3. Within-instance Spearman with bootstrap CIs. |
 | Count-based bonus can use cheap tabular counts | §5.3. Counts the agent's own observations rather than true state — deviation, justified in §5.3. |
 | NoisyNets is a clean drop-in | §5.4. |
-| Boltzmann needs a stated temperature schedule | §5.2. Exponential decay 1.0 to 0.05 over the first 40% of training. |
+| Boltzmann needs a stated temperature schedule | §5.2. Exponential decay 0.1 to 0.001 over the first 40% of training. |
 | Say how intrinsic bonuses interact with evaluation return | §4.4. Evaluation is greedy, extrinsic-only, bonus never enters it. |
 | Make difficulty continuous (5-6 instances) | §3. DoorKey sizes {5,6,7,8,10}, MultiRoom N {2,3,4,5,6}. |
 | Decompose coverage into raw vs task-relevant | §6.2, §6.3. |
@@ -94,10 +94,13 @@ Alongside each instance the env factory exposes a **difficulty index** for
 plotting: the family parameter (grid size or room count), plus the count of
 reachable `(x, y, dir)` states, which doubles as the coverage denominator (§6.1).
 
-### UNVERIFIED assumptions about the MiniGrid API
+### MiniGrid API — VERIFIED 2026-08-17
 
-Nothing is installed yet, so the following are from memory and **must be verified
-by the day-1 API-verification script before any code depends on them**:
+`scripts/verify_api.py` ran against **minigrid 3.1.0** and all 13 instances
+constructed successfully. Every assumption below is confirmed; this section was
+headed "UNVERIFIED ... nothing is installed yet" until 2026-08-20, which was
+stale and would send a future session to re-run verification that already
+passed. See `docs/decision_log.md`.
 
 - `minigrid.envs.EmptyEnv(size=n)`
 - `minigrid.envs.DoorKeyEnv(size=n)`
@@ -107,9 +110,12 @@ by the day-1 API-verification script before any code depends on them**:
 - `env.unwrapped.grid` is walkable-queryable for the reachability BFS
 - `MultiRoomEnv` still ships in the current `minigrid` release
 
-If any of these are wrong, fix the factory and record the correction in
-`docs/decision_log.md`. Do not work around a failing import by guessing a second
-API.
+One assumption did NOT survive contact and is corrected in §6.4: `MultiRoom` is
+25x25 for every N, not the 16x16 this document originally assumed.
+
+If any of these ever break under a newer `minigrid`, fix the factory and record
+the correction in `docs/decision_log.md`. Do not work around a failing import by
+guessing a second API.
 
 ---
 
@@ -150,7 +156,7 @@ target_update      1000 steps (hard copy)
 learning_starts    1000 steps
 train_freq         every 4 environment steps
 grad_clip          10.0
-total_steps        400_000        # provisional, confirmed after day-1 benchmark
+total_steps        400_000        # CONFIRMED by the day-1 benchmark, 2026-08-17
 eval_every         5_000 steps
 eval_episodes      1              # see 4.5 -- evaluation is deterministic
 snapshot_every     10_000 steps   # see 6.4 -- sets early-AUC resolution
@@ -203,7 +209,10 @@ coverage undefined — with a different maze each episode there is no fixed
 denominator to take a fraction of.
 
 **Every run therefore pins one layout for its whole life**, by passing the run's
-seed to every `reset()`. The 5 seeds give 5 different layouts per instance, so no
+seed to every `reset()`. On DoorKey and MultiRoom the 5 seeds give 5 different
+layouts per instance; **Empty has no random component, so all 5 seeds share one
+layout** (corrected 2026-08-20 -- the seeds still differ in network init, action
+sampling and replay order, so the runs are not duplicates). So no
 result is an artefact of one lucky maze. A run's seed thus controls layout,
 network initialisation, and exploration randomness together — which is the normal
 meaning of "seed", but worth stating.
@@ -250,8 +259,17 @@ low temperature approaches greedy. Unlike epsilon-greedy, exploratory actions ar
 weighted by how good the agent thinks they are.
 
 Schedule (the professor asked for this explicitly): **exponential** decay of
-`tau` from `1.0` to `0.05` over the first **40%** of `total_steps`, constant
+`tau` from `0.1` to `0.001` over the first **40%** of `total_steps`, constant
 thereafter.
+
+These endpoints were calibrated against measured Q-value scales on 2026-08-19
+and are the values in `src/rlx/config.py`, which is the source of truth for any
+number quoted in the report. This section said `1.0` to `0.05` until 2026-08-20;
+those were round numbers picked before the Q-scale was measured, and at MiniGrid's
+reward scale they leave the softmax essentially uniform for the whole run. The two
+endpoints are calibrated against *different* measurements because the Q-scale
+shrinks about 7x over a run — see the comment block in `config.py` and
+`docs/decision_log.md`.
 
 ```
 tau(t) = max(tau_min, tau_0 * (tau_min / tau_0) ** (t / (0.4 * total_steps)))
@@ -265,8 +283,30 @@ Maintain a tabular visit count `N(k)` over count keys. Add an intrinsic bonus to
 the reward stored in the replay buffer:
 
 ```
-bonus = beta / sqrt(N(k))        beta = 0.05
+bonus = beta / sqrt(N(k'))       beta = 0.01
 ```
+
+**`k'` is the key of the observation the agent ARRIVES at, not the one it left.**
+Decided 2026-08-20 on a measurement; this section did not specify the keying at
+all before then, and the implementation paid `N(k)` until that date.
+
+Keying on the current observation pays the same bonus to all 7 actions, so at
+the moment it is paid it carries no information about which action leads
+somewhere new — novelty reaches the policy only one bootstrap level deeper. Both
+schemes have the same fixed point (the action advantages differ by exactly
+`gamma`), but the bonus is non-stationary, so the agent is never at the fixed
+point and the transient is what matters. Measured over 9 paired runs on
+DoorKey-6, DoorKey-8 and MultiRoom-N4: successor keying gave **8.4% more area
+under the coverage curve**, better on 8 of 9 pairs, sign test `p = 0.0195`.
+`N(k, a)` (MBIE-EB style) measured statistically indistinguishable from `N(k')`
+and was rejected because it would require changing the frozen `Explorer`
+interface. See `docs/decision_log.md`, "Where the count-based bonus is paid".
+
+`N(k')` counts visits to `k'` **before** this arrival is recorded: the training
+loop calls `observe()` on the current key, then pays the bonus on the successor
+key. The maximum possible bonus is `beta = 0.01` at a count of 1, against a
+solved-maze return of about 0.95, so paying a bonus on a terminal observation is
+worth at most ~1% of the extrinsic reward.
 
 Action selection is epsilon-greedy with a **fixed small** `epsilon = 0.05`, so
 exploration pressure comes from the bonus rather than from randomness, while the
@@ -289,9 +329,12 @@ partition than distinct states — two different positions can produce an identi
 7x7x3 view (this is called *perceptual aliasing*). This weakens the bonus
 somewhat. That is the honest price of not cheating, and it should be named.
 
-`beta = 0.05` is provisional; if the bonus visibly dominates the extrinsic reward
-(MiniGrid returns are in [0, 1]) it must be reduced, and the change recorded in
-`docs/decision_log.md`.
+`beta` was provisionally `0.05` and is now **`0.01`**, settled 2026-08-19 and
+recorded in `docs/decision_log.md`. It was reduced for exactly the reason this
+paragraph anticipated: MiniGrid returns are in [0, 1], and at `0.05` the
+accumulated bonus was large enough relative to the extrinsic reward to compete
+with it. `report/sections/08-limitations.md` states the change and its
+consequence. `src/rlx/config.py` is the source of truth for the shipped value.
 
 ### 5.4 NoisyNets
 
@@ -337,6 +380,17 @@ changed on the last day without re-running a single experiment.
 **Denominator.** A breadth-first search over the static grid layout gives the set
 of reachable cells; multiplied by 4 directions this is the reachable-state count.
 Computed once per environment instance and cached.
+
+**The goal cell's 4 states are excluded from BOTH numerator and denominator.**
+Corrected 2026-08-20; this section previously described the un-excluded version.
+The training loop records the agent's position at the TOP of each iteration, and
+the episode ends in the same iteration the agent steps onto the goal, so a goal
+state is never recorded even on a run that solves the maze every time. Measured:
+`goal_visits == 0` in all 16 pilot runs. Leaving the goal in the denominator
+would therefore cap coverage below 1.0 for a reason that has nothing to do with
+exploration. `rlx.analysis.coverage._loggable` implements the exclusion, and
+`docs/glossary.md` and `report/sections/05-coverage-measurement.md` both describe
+this version.
 
 ### 6.2 Raw coverage
 
@@ -481,7 +535,7 @@ time on one GPU.
 ### 8.2 Sweep execution
 
 ```bash
-python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 8
+python -m rlx.sweep --config configs/main.yaml --shard 0/3 --workers 12
 ```
 
 - `--shard i/n` — machine `i` of `n` takes every `n`-th run. Three machines, three

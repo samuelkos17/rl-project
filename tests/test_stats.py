@@ -8,8 +8,9 @@ import pytest
 
 from rlx.analysis.aggregate import load_all
 from rlx.analysis.stats import (
-    aggregate_correlation, build_analysis_table, compare_coverage_predictors,
-    iqm_by_strategy, rank_stability, within_instance_correlation,
+    _bootstrap_spearman_ci, _iqm, aggregate_correlation, build_analysis_table,
+    compare_coverage_predictors, iqm_by_strategy, probability_of_improvement,
+    rank_stability, within_instance_correlation,
 )
 
 #: Resolved from this file, not the working directory, so the suite passes no
@@ -531,3 +532,68 @@ def test_h1_is_confirmed_on_the_dataset_that_has_the_effect(with_effect):
     assert agg["ci_above_zero"] is True
     assert agg["trend_with_difficulty"] > 0.5
     assert agg["confirms_h1"] is True
+
+
+def test_iqm_matches_rliable_exactly_including_ties():
+    """_iqm and rliable's aggregate_iqm must be the SAME estimator.
+
+    build_report prints them in adjacent tables under one heading, so a
+    divergence puts two different numbers for "the IQM" on one page.
+
+    The tie case is the one that matters and the one the synthetic fixture
+    cannot produce: real MiniGrid returns are exactly 0.0 whenever the agent
+    never reaches the goal. A percentile filter -- keeping everything between
+    the 25th and 75th percentiles -- keeps far more than the middle half once
+    values tie, and returned 0.455 here where rliable returns 0.607.
+    """
+    from rliable import metrics
+
+    cases = [
+        [0.0, 0.0, 0.90, 0.92, 0.95],   # 3 of 5 seeds solve: the realistic shape
+        [0.0] * 4 + [0.9],              # 1 of 5
+        [0.0] * 20,                     # an instance nothing solved
+        [0.5] * 8,                      # all tied
+        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+    ]
+    for values in cases:
+        arr = np.array(values, dtype=float)
+        expected = float(metrics.aggregate_iqm(arr.reshape(-1, 1)))
+        assert np.isclose(_iqm(arr), expected), (values, _iqm(arr), expected)
+
+
+def test_probability_of_improvement_is_computed_within_instances():
+    """Pooling across instances lets a strategy that wins everywhere score < 0.5.
+
+    Pooling compares a run on an easy instance against a run on a hard one, so
+    the difficulty spread swamps the strategy difference. Here `a` beats `b` on
+    both instances, yet pooling returns 0.75.
+    """
+    rows = []
+    for env_id, base in [("DoorKey-5", 0.9), ("DoorKey-10", 0.0)]:
+        for strategy, offset in [("a", 0.05), ("b", 0.0)]:
+            for seed in range(5):
+                rows.append({"env_id": env_id, "strategy": strategy,
+                             "seed": seed, "final_return": base + offset})
+    df = pd.DataFrame(rows)
+    assert probability_of_improvement(df, "a", "b") == 1.0
+    assert probability_of_improvement(df, "b", "a") == 0.0
+
+
+def test_no_interval_when_most_resamples_are_degenerate():
+    """A CI conditioned on its own signal is not reported at all.
+
+    With 19 of 20 runs tied at exactly 0.0 -- expected at the hard end of every
+    family -- a third of bootstrap resamples have a constant return column and
+    an undefined correlation. Keeping only the rest conditions the interval on
+    the resamples that retained the single solved run.
+    """
+    rng = np.random.default_rng(0)
+    x = rng.random(20)
+
+    degenerate = np.zeros(20)
+    degenerate[0] = 0.9
+    assert np.isnan(_bootstrap_spearman_ci(x, degenerate, np.random.default_rng(1))).all()
+
+    healthy = rng.random(20)
+    lo, hi = _bootstrap_spearman_ci(x, healthy, np.random.default_rng(1))
+    assert np.isfinite([lo, hi]).all() and lo <= hi

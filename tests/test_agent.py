@@ -102,3 +102,38 @@ def test_noisy_flag_builds_a_noisy_network():
     agent = DoubleDQNAgent(n_actions=7, cfg=_cfg(), noisy=True)
     from rlx.networks import NoisyLinear
     assert any(isinstance(m, NoisyLinear) for m in agent.online.modules())
+
+
+def test_target_network_never_uses_noise():
+    """The TD target must be deterministic for every strategy, noisy included.
+
+    weight_epsilon/bias_epsilon are BUFFERS, so sync_target()'s load_state_dict
+    copies the online net's current noise sample into the target. Before the
+    2026-08-20 fix that sample then sat frozen for 1000 steps, acting as a fixed
+    bias on the bootstrap target for the noisy arm only -- a difference in the
+    LEARNING algorithm, which CLAUDE.md section 7 forbids across strategies.
+    """
+    from rlx.networks import NoisyLinear, obs_batch_to_tensor
+    torch.manual_seed(0)
+    agent = DoubleDQNAgent(n_actions=7, cfg=_cfg(), noisy=True)
+
+    def flags(net):
+        return [m.noise_enabled for m in net.modules() if isinstance(m, NoisyLinear)]
+
+    assert flags(agent.target) == [False, False], "target must score with mean weights"
+    assert flags(agent.online) == [True, True], "online must still explore"
+
+    # and it must survive a sync, which is where the buffers get overwritten
+    agent.online.reset_noise()
+    agent.sync_target()
+    assert flags(agent.target) == [False, False], "sync_target re-enabled target noise"
+
+    # the target's output is identical across a resample + sync
+    obs = np.random.default_rng(0).integers(0, 10, (4, 7, 7, 3)).astype(np.uint8)
+    t = obs_batch_to_tensor(obs, "cpu")
+    with torch.no_grad():
+        before = agent.target(t).clone()
+        agent.online.reset_noise()
+        agent.sync_target()
+        after = agent.target(t).clone()
+    assert torch.equal(before, after), "target Q-values moved when only noise changed"

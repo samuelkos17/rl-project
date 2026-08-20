@@ -105,3 +105,59 @@ def test_config_json_records_the_resolved_config(tmp_path):
     assert saved["total_steps"] == cfg.total_steps
     assert saved["strategy"] == cfg.strategy
     assert saved["seed"] == cfg.seed
+
+
+def test_count_bonus_is_keyed_on_the_successor_observation(tmp_path, monkeypatch):
+    """The bonus paid into the buffer must be for the state ARRIVED at.
+
+    Keying on the state being left pays every action the same bonus, so nothing
+    distinguishes the action that leads somewhere new until the value has
+    bootstrapped one level further. Measured 2026-08-20 to cost 8.4% of coverage
+    area over 9 paired runs; see docs/decision_log.md, "Where the count-based
+    bonus is paid".
+
+    This asserts the wiring in train.py, not the arithmetic in CountBased: it
+    records which key each intrinsic_bonus call received and checks it is the
+    NEXT observation, not the current one.
+    """
+    from rlx.exploration.count_based import CountBased
+
+    seen = []
+    original = CountBased.intrinsic_bonus
+
+    def recording_bonus(self, count_key):
+        seen.append(count_key)
+        return original(self, count_key)
+
+    monkeypatch.setattr(CountBased, "intrinsic_bonus", recording_bonus)
+
+    observed = []
+    original_observe = CountBased.observe
+
+    def recording_observe(self, count_key):
+        observed.append(count_key)
+        return original_observe(self, count_key)
+
+    monkeypatch.setattr(CountBased, "observe", recording_observe)
+
+    run_training(_cfg(tmp_path, strategy="count_based"))
+
+    assert len(seen) == len(observed) > 0
+    # observe() counts the CURRENT observation; the bonus is paid on the NEXT
+    # one. So at each step the two must differ in role: the key the bonus was
+    # paid on at step t is the key observe() sees at step t+1 -- except where an
+    # episode ended in between and the environment was reset.
+    matches = sum(1 for t in range(len(seen) - 1) if seen[t] == observed[t + 1])
+    assert matches > 0.5 * (len(seen) - 1), (
+        "the bonus key does not track the next step's observation, so it is "
+        "being keyed on the current observation instead of the successor"
+    )
+
+    # It must also not be trivially the same key every step. Most MiniGrid
+    # actions are no-ops for the observation -- walking into a wall, or pickup /
+    # drop / done with nothing to act on -- so obs == next_obs on the majority of
+    # steps and the two keys legitimately agree there. The discriminating fact is
+    # that they do not agree ALWAYS: under the old current-observation keying
+    # this count would be exactly len(seen).
+    same = sum(1 for t in range(len(seen)) if seen[t] == observed[t])
+    assert same < len(seen), "bonus key is always the current observation"

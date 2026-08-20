@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import torch
 
@@ -81,3 +83,42 @@ def test_explorer_acts_purely_greedily(cfg, rng, q_values, key):
 
 def test_explorer_adds_no_intrinsic_bonus(cfg, rng, key):
     assert NoisyExplorer(cfg, rng).intrinsic_bonus(key) == 0.0
+
+
+def test_noise_is_factorised_not_independent():
+    """Factorised Gaussian noise: eps_out outer eps_in, so the matrix is rank 1.
+
+    Independent per-weight noise would draw in_features*out_features Gaussians
+    instead of in_features+out_features, giving a full-rank matrix. Both look
+    identical from the outside -- same shape, same rough magnitude, noise still
+    changes on resample -- so nothing else in this suite separates them. Verified
+    2026-08-20 by monkeypatching reset_noise to draw independent noise: the whole
+    suite still passed.
+    """
+    torch.manual_seed(0)
+    layer = NoisyLinear(16, 8, sigma0=0.5)
+    layer.reset_noise()
+    assert np.linalg.matrix_rank(layer.weight_epsilon.numpy()) == 1
+
+    # The bias noise IS the output factor, so weight_epsilon must reconstruct
+    # exactly as outer(bias_epsilon, eps_in) -- recovering eps_in from any one
+    # column. This is what pins bias_epsilon to the same draw as the weights
+    # rather than being an independent vector that merely has the right shape.
+    eps_in = layer.weight_epsilon[0, :] / layer.bias_epsilon[0]
+    assert torch.allclose(layer.weight_epsilon,
+                          torch.outer(layer.bias_epsilon, eps_in), atol=1e-6)
+
+
+def test_sigma_is_scaled_by_fan_in():
+    """sigma_init = sigma0 / sqrt(in_features), per Fortunato et al.
+
+    Without the fan-in division sigma would be 32x too large on the 1024-input
+    head layer, which would invalidate the scripts/measure_sigma.py calibration
+    that chose noisy_sigma0 = 0.5. Verified 2026-08-20 that dropping the scaling
+    passes every other test in the suite.
+    """
+    for in_features, sigma0 in [(8, 0.5), (64, 0.5), (1024, 0.5), (16, 0.25)]:
+        layer = NoisyLinear(in_features, 4, sigma0=sigma0)
+        expected = sigma0 / math.sqrt(in_features)
+        assert np.isclose(layer.weight_sigma[0, 0].item(), expected), in_features
+        assert np.isclose(layer.bias_sigma[0].item(), expected), in_features

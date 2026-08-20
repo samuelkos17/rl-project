@@ -185,9 +185,15 @@ last five evaluation points of a run.
 
 *Reproducing the numbers in this section.* The denominator table comes from
 `rlx.envs.reachable_mask` and `rlx.analysis.coverage.task_relevant_mask`
-evaluated on `grid_info(env_id, layout_seed=seed)` for seeds 0–4. The pilot
-goal-counter check and the 0.2% figure are recorded in `docs/decision_log.md`
-under "The goal square was in the denominator and could never be reached" and "A
-full review of tasks 1-4 found nine things"; the three normalisation figures
-under "The normalisation error is not one number". Everything
-else in this section is fixed in `src/rlx/config.py`.
+evaluated on `grid_info(env_id, layout_seed=seed)` for seeds 0–4, each then
+passed through `rlx.analysis.coverage._loggable`, which removes the goal's four
+states. That last step is not optional: without it the first column reads 36,
+144, 784 and 28 rather than the 32, 140, 780 and 24 printed above. The pilot
+goal-counter check is recorded in `docs/decision_log.md` under "The goal square
+was in the denominator and could never be reached". The 0.2% figure is derived in
+`rlx.analysis.coverage` itself, as `0.5 * c(0) * snapshot_every / window`; on
+Empty-5 that is 0.00174 in absolute terms, or 0.25% of an early-AUC of 0.70. The
+three normalisation figures are under "The normalisation error is not one number"
+in the same log, and reproduce exactly — 12.50%, 10.90% and 6.67% — from the
+three curves that entry names. Everything else in this section is fixed in
+`src/rlx/config.py`.

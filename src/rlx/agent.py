@@ -18,6 +18,20 @@ class DoubleDQNAgent:
         self.target = QNetwork(n_actions, noisy, cfg.noisy_sigma0).to(cfg.device)
         self.target.load_state_dict(self.online.state_dict())
         self.target.eval()
+        # The target scores with mean weights only, for every strategy.
+        #
+        # weight_epsilon / bias_epsilon are BUFFERS, so load_state_dict copies the
+        # online net's current noise sample into the target on every sync_target().
+        # That sample then sits frozen across the next 1000 steps (250 gradient
+        # updates), which is a fixed bias on the TD target rather than zero-mean
+        # noise -- measured at |dQ| 0.041 against a signal of |Q| 0.057. Only the
+        # noisy arm would get it, so the four arms would no longer share one
+        # learning algorithm, which CLAUDE.md section 7 requires. Exploration noise
+        # belongs in action selection (the online net), not in the target.
+        #
+        # noise_enabled is a plain attribute, not a buffer, so load_state_dict
+        # leaves it alone and this survives every later sync_target().
+        self.target.set_noise_enabled(False)
         self.optimizer = torch.optim.Adam(self.online.parameters(), lr=cfg.learning_rate)
 
     def q_values(self, obs) -> np.ndarray:

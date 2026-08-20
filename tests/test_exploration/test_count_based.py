@@ -70,3 +70,34 @@ def test_reports_mean_bonus_for_logging(cfg, rng, q_values, key):
     c.act(q_values, key, 0)
     assert "mean_bonus" in c.stats()
     assert "epsilon" in c.stats()
+
+
+def test_act_does_not_count(cfg, rng, q_values, key):
+    """Only observe() counts. act() must leave the table untouched.
+
+    The Explorer contract calls observe() once per environment step, after
+    acting. If act() also incremented, every state would be counted twice, so
+    every bonus would be too small by a factor of sqrt(2) and distinct_keys
+    would be inflated. Verified 2026-08-20 that adding the extra increment to
+    act() passes all 37 other exploration tests.
+    """
+    c = CountBased(cfg, rng)
+    for step in range(10):
+        c.act(q_values, key, step)
+    assert dict(c.counts) == {}, "act() incremented the count table"
+    assert c.stats()["distinct_keys"] == 0.0
+
+    # and the first observe() must still yield the full, undivided bonus
+    c.observe(key)
+    assert np.isclose(c.intrinsic_bonus(key), cfg.count_beta)
+
+
+def test_intrinsic_bonus_does_not_create_entries(cfg, rng, key):
+    """Asking about an unseen key must not make it count as seen.
+
+    self.counts is a defaultdict, so a bare self.counts[key] read inserts a
+    zero entry and distinct_keys starts counting keys merely asked about.
+    """
+    c = CountBased(cfg, rng)
+    c.intrinsic_bonus(b"never-observed")
+    assert c.stats()["distinct_keys"] == 0.0

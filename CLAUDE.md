@@ -163,10 +163,16 @@ git, so cloning the repo gives you the code but nothing to run it with. Verify
 with `pytest -q`. A `ModuleNotFoundError: No module named 'rlx'` means
 `pip install -e .` was skipped; it is not a broken commit.
 
-`pip install torch` on Windows yields a **CPU-only** build, and that is what we
-want. Benchmarked 2026-08-17: CPU 630 steps/s vs CUDA 550 on an RTX 3060 Ti — the
-network is far too small for a GPU to pay off at batch size 1. `device: cpu` is
-fixed in `configs/main.yaml`. **Do not install a CUDA build.**
+We run on the **CPU**. Benchmarked 2026-08-17: CPU 630 steps/s vs CUDA 550 on an
+RTX 3060 Ti — the network is far too small for a GPU to pay off at batch size 1.
+`device: cpu` is fixed in `configs/main.yaml`, so the build you happen to have
+does not change any result.
+
+This section previously claimed `pip install torch` yields a CPU-only build on
+Windows. Corrected 2026-08-20: it does not. The environment we actually run has
+`torch 2.13.0+cu130` with `torch.cuda.is_available() == True`. A CUDA build is a
+larger download and nothing worse; the pinned `device: cpu` means it is never
+used.
 
 ---
 
@@ -326,7 +332,7 @@ target_update      1000 steps (hard copy)
 learning_starts    1000 steps
 train_freq         every 4 environment steps
 grad_clip          10.0
-total_steps        400_000        # UNVERIFIED until the day-1 benchmark
+total_steps        400_000        # CONFIRMED by the day-1 benchmark, 2026-08-17
 eval_every         5_000 steps
 eval_episodes      1              # evaluation is deterministic -- see below
 snapshot_every     10_000 steps   # visitation array; 8 points in the early-AUC window
@@ -335,8 +341,15 @@ seeds              0, 1, 2, 3, 4
 
 **Layouts are pinned per run.** MiniGrid regenerates its maze on every `reset()`,
 which would leave state coverage without a fixed denominator. Every `reset()`
-therefore passes the run's seed, so one run sees exactly one maze; the 5 seeds
-give 5 layouts per instance.
+therefore passes the run's seed, so one run sees exactly one maze.
+
+On **DoorKey and MultiRoom** the 5 seeds give 5 different layouts per instance.
+On **Empty they do not**: `Empty` has no random component, so all 5 seeds share
+one layout (verified 2026-08-20 — `Empty-5` is start (1,1) goal (3,3) on every
+seed). The seeds still differ in network initialisation, action sampling and
+replay order, so the runs are not duplicates, but for the Empty family "5 seeds"
+means 5 runs on one maze, not 5 mazes. `report/sections/08-limitations.md` says
+this correctly and this file did not until 2026-08-20.
 
 Because the layout is pinned and evaluation is greedy, MiniGrid is fully
 deterministic at evaluation time, so `eval_episodes = 1` — 10 would produce 10

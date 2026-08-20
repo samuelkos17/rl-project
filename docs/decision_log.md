@@ -310,6 +310,13 @@ So: right conclusion, wrong reason, and we only know that because we measured.
 Total speed stops improving after about 8 workers (10 is actually worse than 8).
 **Use `--workers 8`.**
 
+> **SUPERSEDED 2026-08-18 — use `--workers 12`.** A later measurement on the real
+> pilot (further down this log: 4 workers 137 s, 8 workers 108 s, 12 workers 81 s)
+> reversed this. The table above was measured on a synthetic loop; the pilot is
+> the case we actually run. Kept here because the reasoning is still worth
+> reading — total throughput really does flatten out, we just put the flat point
+> in the wrong place.
+
 **What this means for the schedule:** the full 260 runs is 104 million steps.
 One machine at 8 workers: about 7.2 hours. Our three machines: **about 2.4
 hours.** That fits comfortably, so we keep the full 400,000-step budget rather
@@ -2766,3 +2773,405 @@ and is true.
 10,000 at `total_steps = 400_000`: `1 - exp(-steps/25_000)`, `steps/160_000`, and
 a constant 0.9. Compare `early_auc(steps, cov, 400_000)` against
 `trapezoid(cov, steps) / (steps[-1] - steps[0])`.
+
+---
+
+## 2026-08-20 — We had the whole project code-reviewed, in four parts
+
+**Status:** Active
+
+**What changed:** Nothing in the code yet — this entry explains where the next
+five entries came from. We ran a full review of everything in the repository,
+split four ways: the core training code, the four exploration strategies, the
+analysis and statistics, and the documents (including whether we have actually
+answered each of the professor's points).
+
+The reviewers were told to *prove* their findings by running code rather than by
+reading it, and to say plainly when they could not. That turned out to matter:
+several things that looked wrong on a read-through were fine, and two of the real
+problems were only visible by executing the code and comparing numbers.
+
+**Why:** Three days before the deadline, with 260 runs about to be launched, is
+the last moment where a wrong number is cheap to fix. After the sweep runs, some
+of these would have been baked into results we would not have time to redo.
+
+**What it means for the results:** The important news is what the review did
+*not* find. The parts of the code that would silently corrupt every number in the
+report — the learning rule, the way we treat an episode that runs out of time,
+the fact that each run keeps one fixed maze, the greedy evaluation, keeping the
+exploration bonus out of the reported score, and the rule that the statistics are
+computed *inside* each maze rather than across mazes — were each checked by
+running them, and each was correct.
+
+**One honest caveat about the process.** Two reviewers found the same
+documentation problem independently, from opposite directions, which is good
+evidence it was real. But reviewers are not oracles: one flagged a number in a
+code comment as unreproducible and offered a replacement that was itself computed
+a different way again. We re-derived it ourselves before changing anything. Treat
+review findings as leads to verify, not as verdicts.
+
+---
+
+## 2026-08-20 — The NoisyNets target network now uses mean weights
+
+**Status:** Active
+
+**What changed:** One line in `src/rlx/agent.py`. For the `noisy` strategy only,
+the "target network" now makes its predictions without any random noise.
+
+Some background, because this is the one change here that alters what the
+experiment actually does. DQN learns using two copies of the same network. The
+"online" one is the one being trained; the "target" one is a frozen snapshot,
+refreshed every 1000 steps, used to work out what each action *should* have been
+worth. Having a stable second copy is what stops training from chasing its own
+tail.
+
+NoisyNets explores by adding random noise to the network's weights, so the agent
+tries different things without us having to tell it to. That noise is meant to
+live in the *online* network — it is how the agent picks its actions.
+
+What we found is that the noise was also landing in the target network, and in a
+particularly unhelpful way. The random numbers are stored alongside the weights,
+so every time we refreshed the target from the online network we also copied
+whichever random numbers happened to be current at that instant — and then left
+them frozen there for the next 1000 steps. So instead of noise that averages out,
+the `noisy` agent spent every 1000-step stretch learning against a target tilted
+consistently in one arbitrary direction.
+
+We measured the tilt: it moved the target's values by about 0.041, against a real
+signal — the difference between the best action and the second-best — of about
+0.057 at the start of training and 0.003 by the end. So by the end of a run the
+distortion was substantially larger than the thing being learned.
+
+**Why:** The whole project rests on all four strategies using *the same learning
+algorithm* and differing *only* in how they explore. A wobbling target is not a
+difference in exploration; it is a difference in how the agent learns. Leaving it
+in would mean that if `noisy` came last, we could not say whether that was
+because its exploration was worse or because it was the only arm learning against
+a moving goalpost.
+
+**What we did not do.** The original NoisyNets paper does put noise in the target
+network — but it draws *fresh* noise on every update, so the noise averages away.
+Our version froze one draw for 1000 steps, which does not. We could have matched
+the paper by resampling every update instead. We chose the simpler option: the
+target is now noise-free for every strategy, so all four share one learning rule
+exactly. This is a deliberate deviation from the paper and the report should say
+so.
+
+**What it means for the results:** The `noisy` arm will behave differently from
+what our earlier pilot runs showed. Exploration itself is untouched — the online
+network is still noisy, and we confirmed it still varies by 0.058 between draws.
+Only the learning target changed, and it is now identical in kind to the other
+three arms.
+
+**The documentation was wrong about this too.** This log previously said "the
+target network keeps the noise it was initialised with". It did not — it picked
+up a new sample roughly 400 times per run. That sentence was on its way into the
+report's limitations section.
+
+**Reproduce it:** `tests/test_agent.py::test_target_network_never_uses_noise`. We
+checked that the test earns its place by removing the fix and confirming the test
+fails.
+
+---
+
+## 2026-08-20 — Our "IQM" was not the IQM
+
+**Status:** Active
+
+**What changed:** `_iqm` in `src/rlx/analysis/stats.py` is now three lines and
+calls `scipy.stats.trim_mean`.
+
+The IQM ("interquartile mean") is the headline number for comparing strategies:
+sort the runs by score, throw away the best quarter and the worst quarter, and
+average what is left. We use it instead of a plain average so that one lucky or
+unlucky seed does not decide the answer.
+
+We were computing it by keeping every run whose score fell *between* the 25th and
+75th percentile marks. That sounds like the same thing, and usually is — but not
+when scores are tied. And ours tie constantly: a run that never reaches the goal
+scores exactly 0.0, and on the harder mazes many runs will.
+
+An example with five seeds, three of which solve the maze:
+`[0.0, 0.0, 0.90, 0.92, 0.95]`. The proper IQM is **0.607**. Ours gave **0.455**,
+because both zeros sit at or below the lower mark and neither got discarded.
+
+**Why it mattered more than it looks:** `results.md` prints our number and the
+`rliable` library's number in two tables on the same page, under one heading
+saying the top and bottom quarters were dropped. That was true of one table and
+false of the other. Across a realistic 260-run set, 22 of 52 strategy-by-maze
+cells disagreed, by up to 0.117.
+
+**What it means for the results:** The *ranking* barely moves — we checked, and
+across 177,000 simulated five-seed comparisons the two versions pick a different
+winner 0.035% of the time. So no conclusion was at risk. But the printed values
+were wrong, and they were wrong in a graded report.
+
+**Why we did not catch it earlier:** our fake test data never produces two runs
+with exactly the same score, so no test ever exercised the tie case. Fixed by
+adding a test that checks our number against `rliable`'s on five tie-heavy cases.
+
+---
+
+## 2026-08-20 — Three places where a number looked more certain than it was
+
+**Status:** Active
+
+**What changed:** Three fixes in `src/rlx/analysis/`, all the same idea: do not
+let a quantity we cannot actually measure come out looking like one we did.
+
+**1. Confidence intervals on the hard mazes.** For each maze we report a range
+around the correlation, to say how sure we are of it. We compute that range by
+re-drawing the 20 runs at random thousands of times and seeing how much the
+answer moves. But if 19 of 20 runs scored exactly 0.0 — which we expect on the
+hardest mazes — then a third of those re-draws contain no variation at all and
+the correlation is undefined. We were quietly dropping those and reporting the
+range of what was left. That is not a 95% range of anything: every surviving
+draw is one that happened to include the single run that solved the maze, so it
+is a range conditioned on the very thing carrying the signal.
+
+Now, if more than 20% of the re-draws come out undefined, we report no range at
+all — the same thing we already did for a maze with no variation. Refusing to
+answer is honest; a confident-looking range secretly conditioned on its own
+signal is not. The 20% cutoff is a judgement call, not a derived number, and the
+code says so.
+
+**2. "How often does strategy A beat strategy B?"** We were comparing every run
+of A against every run of B across a whole family of mazes. But a family runs
+from DoorKey-5 (easy) to DoorKey-10 (hard), so this compared A's runs on the hard
+maze against B's runs on the easy one. A strategy that beat its rival on *every
+single maze* could still score below 0.5. We checked: on a two-maze example where
+A wins everywhere, the old code returned **0.75** instead of 1.0. It now compares
+within each maze and then averages — the same rule we already apply everywhere
+else, for the same reason (see the entry on the statistical trap).
+
+**3. A maze that produced no runs at all vanished silently.** If one machine's
+share of the sweep never finished, every later step worked out its list of mazes
+from the data it was handed, so 13 mazes quietly became 12 and every number still
+computed. A gap *inside* the results was already caught loudly; a missing whole
+column was not. `results.md` now prints "Environment instances: **12** of 13 —
+**MISSING: MultiRoom-N6**". We say "hard mazes failing is a finding, not a bug",
+but that only holds if the failure is visible.
+
+**Also:** `requirements.txt` now requires NumPy 2.0 or newer. Our early-coverage
+measurement calls `np.trapezoid`, which only exists from NumPy 2.0 — the old name
+was `np.trapz`. The version range we had allowed NumPy 1.x, where that call
+raises an error. It would have raised it at *analysis* time, after the sweep had
+already run.
+
+**What it means for the results:** Nothing computed so far changes. These are all
+about not overstating confidence once the real data arrives.
+
+---
+
+## 2026-08-20 — The specs had drifted away from the code
+
+**Status:** Active
+
+**What changed:** We corrected `docs/specs/`, `CLAUDE.md` and `docs/glossary.md`
+to match what the code actually does.
+
+This is the finding that worried us most, and it is a process failure rather than
+a bug. Five times over the past days we changed something, worked out carefully
+why, and wrote a good entry in *this* log — and then never updated the design
+document that declares itself authoritative and that every new Claude session
+reads first. So we ended up with documents confidently stating numbers we do not
+run:
+
+| | The specs said | We actually run |
+|---|---|---|
+| Boltzmann temperature | 1.0 down to 0.05 | **0.1 down to 0.001** |
+| Count-based bonus size | 0.05 | **0.01** |
+| Coverage denominator | every reachable state | goal square **excluded** |
+| Empty mazes | "5 seeds give 5 layouts" | **all 5 seeds share one layout** |
+| Sweep workers | 8 | **12** |
+
+We also cleared three "UNVERIFIED" warnings that had been resolved days earlier —
+including one telling future sessions that nothing was installed yet and the
+MiniGrid API still needed checking, which stopped being true on the 17th.
+
+**Why this one is urgent rather than tidy:** the professor asked for the
+Boltzmann temperature schedule *by name*. The report section that owes them that
+answer, `report/sections/03-strategies.md`, is still unwritten — so it would have
+been written from the wrong number, in the one place they specifically asked us
+to be precise. The count-based value is worse in a different way: our own
+limitations section already tells them we reduced it from 0.05 to 0.01, so the
+report and the design document contradicted each other in writing.
+
+**What it means for the results:** No result changes — the code was always right
+and the documents were wrong. But if anyone had "fixed" the code to match the
+spec, they would have undone a calibration that took a pilot re-run to get right.
+
+**One more correction, in `src/rlx/config.py`.** A comment claimed our
+end-of-run temperature gives the best action a 98% chance of being picked. It
+does not. The comment's own way of measuring gives **77%**, and measuring it on
+the full set of seven action values gives 95%. Neither is 98. We have written
+0.77 and, more importantly, *named which of the two ways of measuring we mean*,
+because they differ by 18 points and the comment never said which it was using.
+The decision itself is unaffected: 77% against a random 14% still commits firmly
+to the best action.
+
+**Also corrected, in `CLAUDE.md` and `requirements.txt`:** both claimed that
+`pip install torch` gives a CPU-only build on Windows and warned against
+installing a CUDA build. That is not true — the environment we actually run has
+`torch 2.13.0+cu130` with CUDA available. It costs a larger download and nothing
+else, because `device: cpu` is pinned, so no result is affected. The benchmark
+conclusion (the processor beats the graphics card here) still stands; only the
+claim about what pip installs was wrong.
+
+---
+
+## 2026-08-20 — The 400k sanity run: greedy evaluation works, but fails a quarter of the time
+
+**Status:** Active
+
+**What changed:** Nothing in the code. We ran the single long run this log asked
+for on the 19th, and it answered the question.
+
+**The worry.** In the short pilot runs, all four strategies were clearly learning
+— they scored 0.88 to 0.95 while training — yet scored exactly **0.000** in
+evaluation in 6 of 8 runs. Evaluation is the number the entire report is built
+on. If that had held at full length, every strategy would have scored zero and we
+would have had 260 runs and no result.
+
+**The answer: it was just too short.** One full 400,000-step run on Empty-5
+(epsilon-greedy, seed 0, 12.4 minutes). Evaluation first succeeds at step 45,000
+— more than twice the entire length of the pilot — and reaches 0.955. So the
+pilot was not showing a broken evaluation; it was showing an agent that had not
+finished learning. **The sweep will produce real numbers.**
+
+**But we found something else, and it is worth knowing before the sweep.** Even
+long after the agent has clearly learned the maze, evaluation still returns
+exactly 0.000 on **18 of the 71 checks after step 45,000 — just over a quarter**.
+Meanwhile the training score over the same stretch never collapses (0.914
+average). So this is not the agent forgetting. It is the *greedy* policy — the
+one that always takes its best-guess action with no randomness — occasionally
+walking into a loop and running out of time. A single random action would break
+it, and during training there always is one.
+
+**Why this matters for the headline number.** We define a run's final score as
+the average of its last 5 evaluation checks. On this run one of those last 5 was
+a dropout, so the final score came out **0.764** — for an agent that scores 0.955
+whenever it does not get stuck. The median of the same 5 checks is 0.955.
+
+With a one-in-four dropout rate and only 5 checks, that is a lot of noise in the
+number we are trying to correlate against coverage, and it is noise that has
+nothing to do with exploration.
+
+**What we are doing about it: nothing yet, deliberately.** The final score is
+worked out during *analysis*, from the full evaluation history saved in
+`metrics.csv`. So we can change the definition — median instead of mean, or the
+last 10 checks instead of 5 — after the sweep, without re-running anything. That
+makes it a decision we do not have to take under time pressure, and we would
+rather take it looking at the real spread across all 13 mazes than at one run.
+
+**What it means for the results:** The sweep is safe to launch. But when the data
+is in, look at the dropout rate before trusting any single run's final score, and
+expect this to need a sentence in the limitations section.
+
+It is also a live argument for keeping `eval_episodes = 1` under review. We set it
+to 1 because evaluation is deterministic, which is true — the same policy on the
+same maze gives the same answer every time. What we did not anticipate is that
+the policy *being evaluated* changes between checks, so consecutive checks
+disagree even though each one is individually repeatable. The determinism
+argument was about the wrong source of variation.
+
+**Reproduce it:**
+`python -m rlx.train --env-id Empty-5 --strategy epsilon_greedy --seed 0 --results-root results_pilot`
+then read `eval_return_mean` from the resulting `metrics.csv`.
+
+---
+
+## 2026-08-20 — Where the count-based bonus is paid
+
+**Status:** Active
+
+**What changed:** One line in `src/rlx/train.py`. The count-based strategy now
+pays its novelty bonus for the situation the agent **arrives at**, not the one it
+**leaves**.
+
+**What the bonus is.** Count-based exploration pays the agent a small extra
+reward for reaching a situation it has rarely seen: `0.01 / sqrt(number of times
+seen)`. The bonus exists only inside the replay buffer, never in a reported
+score. The question this entry settles is a narrow one — when the agent moves
+from A to B, is the bonus for how rare **A** is, or how rare **B** is?
+
+We were paying for A. That has a specific weakness: every action available at A
+gets exactly the same bonus, so at the moment the bonus is handed out it says
+nothing about which action leads somewhere new. The information does arrive
+eventually, because the value of B feeds back into the value of the action that
+led there — but one step later, through an extra round of learning.
+
+**Why we did not just fix it on principle.** Because the principled argument says
+it barely matters. We worked it out on a small chain by hand: both versions end
+up at exactly the same policy, and the strength of the preference differs by a
+factor of 0.99. On that basis the honest recommendation was "leave it alone and
+write a paragraph".
+
+That reasoning was right about the destination and wrong about the journey. The
+bonus keeps shrinking as counts grow, so the agent never actually settles at that
+end state — it spends the whole run in the in-between, and that is exactly where
+the two versions differ. The in-between is not a detail here; it is the entire
+400,000 steps.
+
+**So we measured it.** 27 runs: three versions, three mazes chosen because the
+agent's limited view confuses them least (DoorKey-6, DoorKey-8, MultiRoom-N4),
+three seeds, 50,000 steps each. The real training loop ran unmodified — we
+changed only the reward as it entered the replay buffer, so all three arms went
+through byte-identical machinery.
+
+We compared them on **coverage only** — how much of the maze got visited. We did
+not even collect the evaluation score. That is deliberate, and it is the same
+rule we followed when recalibrating the Boltzmann temperature on the 19th:
+choosing a setting by checking which one scores better is how you talk yourself
+into a result. Coverage is the thing the bonus is supposed to affect, so coverage
+is what it is judged on.
+
+| version | extra coverage vs current | better on | sign test |
+|---|---|---|---|
+| pay for where you arrive | **+8.4%** | 8 of 9 paired runs | p = 0.0195 |
+| pay per action taken | +6.9% | 8 of 9 paired runs | p = 0.0195 |
+
+Runs were paired by maze *and* seed, because the seed fixes both the maze layout
+and the starting network — comparing unpaired would have mixed differences
+between mazes into the answer. We used a sign test rather than a confidence
+interval: with only 9 pairs and several exact ties, an interval would have leaned
+on assumptions the data cannot support. (This is the same problem we had just
+fixed in the analysis code that morning, so using it here would have been
+inconsistent.)
+
+**Why not the third version.** "Pay per action taken" scored the same as the
+winner — the difference between them is a coin flip, 5 of 9, p = 1.0. It loses on
+everything else: it would need the `Explorer` interface changed, and that
+interface is frozen precisely so three people can work against it at once. Same
+benefit, more disruption, three days out.
+
+**A worry that did not survive checking.** Paying for where you arrive means
+paying a bonus on reaching the goal, on top of the real reward for reaching the
+goal. But the largest a bonus can ever be is 0.01, and solving a maze scores
+about 0.95 — so it is at most about 1% of the real reward. Not a problem.
+
+**What it means for the results:** The count-based arm will explore somewhat more
+than our pilots showed. Nothing else changes: the other three strategies do not
+use a bonus at all, so the line we changed does nothing for them.
+
+**What this does not tell us.** 50,000 steps is an eighth of a real run, and nine
+comparisons is thin. It says the three versions differ in exploration; it says
+nothing about which produces better final scores, because we deliberately never
+looked. We also left the Empty mazes out: in a big empty room almost everywhere
+looks the same through the agent's 7x7 window, so no version of this bonus does
+much there, and including them would have watered down the comparison rather than
+broadened it.
+
+**One thing still to check before the report cites it.** We described the two
+options as "classical count-based practice" versus "the deep-curiosity
+convention". That is from memory of the papers, not from re-reading them, and
+memory is exactly the wrong source for a claim in a graded report. Someone should
+confirm how MBIE-EB and Bellemare's pseudo-counts actually define it. It no
+longer affects **what we did** — the measurement decides that on its own — but it
+affects how we are entitled to describe it.
+
+**Reproduce it:**
+`tests/test_train.py::test_count_bonus_is_keyed_on_the_successor_observation`
+pins the wiring; we checked it earns its place by reverting the change and
+confirming the test fails.

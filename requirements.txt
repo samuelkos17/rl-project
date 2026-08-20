@@ -1,13 +1,24 @@
-# NOTE: plain `pip install torch` gives a CPU-ONLY wheel on Windows (torch+cpu),
-# and that is exactly what we want. We benchmarked both on 2026-08-17: the CPU
-# does 630 steps/s against the GPU's 550 on an RTX 3060 Ti, because our network is
-# far too small for a GPU to pay off. `device: cpu` is set in configs/main.yaml.
-# Do NOT install a CUDA build -- it is a 2.5 GB download that makes runs slower.
-# See docs/decision_log.md, "Benchmark result: the processor beats the graphics card".
+# NOTE: we run on the CPU, and `device: cpu` is set in configs/main.yaml.
+# We benchmarked both on 2026-08-17: the CPU does 630 steps/s against the GPU's
+# 550 on an RTX 3060 Ti, because our network is far too small for a GPU to pay
+# off. See docs/decision_log.md, "Benchmark result: the processor beats the
+# graphics card".
+#
+# This file used to claim that `pip install torch` yields a CPU-only wheel on
+# Windows. That is NOT true and was corrected on 2026-08-20: the environment we
+# actually run has torch 2.13.0+cu130 with torch.cuda.is_available() == True.
+# It costs a ~2.5 GB download and nothing else -- the pinned `device: cpu` means
+# the CUDA build never gets used, so results are unaffected either way. If you
+# want the smaller wheel, install explicitly from the cpu index; do not expect
+# the plain command to give you one.
 torch>=2.0
 gymnasium>=0.29
 minigrid>=2.3
-numpy>=1.24
+# NumPy 2.0 renamed np.trapz to np.trapezoid and removed the old name.
+# rlx/analysis/coverage.py calls np.trapezoid for the early-coverage AUC, which
+# is the project's main predictor, so 1.x is not merely untested -- it raises
+# AttributeError, and it would do so at ANALYSIS time, after the sweep has run.
+numpy>=2.0
 pandas>=2.0,<3
 scipy>=1.10
 matplotlib>=3.7

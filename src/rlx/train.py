@@ -113,7 +113,22 @@ def run_training(cfg: RunConfig) -> Path:
         explorer.observe(key)
 
         # CRITICAL: the intrinsic bonus goes into the buffer and nowhere else.
-        stored_reward = float(reward) + explorer.intrinsic_bonus(key)
+        #
+        # The bonus is keyed on the observation the agent ARRIVES at, not the one
+        # it left. Keying on the current observation pays the same bonus to all 7
+        # actions, so at the moment it is paid it says nothing about which action
+        # leads somewhere new; the novelty only reaches the policy one bootstrap
+        # level deeper. Both schemes reach the same fixed point (the advantages
+        # differ by exactly gamma), but the count bonus is non-stationary, so the
+        # agent never sits at the fixed point -- the transient is the whole
+        # regime. Measured 2026-08-20 over 9 paired runs on DoorKey-6/8 and
+        # MultiRoom-N4: successor keying covered 8.4% more area under the
+        # coverage curve, better on 8 of 9 pairs, sign test p = 0.0195.
+        # See docs/decision_log.md, "Where the count-based bonus is paid".
+        #
+        # The other three strategies return 0.0 from intrinsic_bonus regardless
+        # of the key, so this line does not touch them.
+        stored_reward = float(reward) + explorer.intrinsic_bonus(_count_key(next_obs))
         buffer.add(obs, action, stored_reward, next_obs, term)
 
         episode_return += float(reward)
