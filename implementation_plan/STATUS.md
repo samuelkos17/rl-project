@@ -16,7 +16,7 @@ Last updated: **2026-08-19** (fourth update, after the review of Daniel's tasks
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets, ✅ knob calibration (`tau_start` 0.1 after pilot) | — | 5 write-ups |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold, ✅ review of 1-6 | — | **all analysis tasks done**; on 22.08 run figures + report against the real results (task 6 steps 7-9) |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold, ✅ review of 1-6, ✅ report §5 + §8 drafted | — | **all analysis tasks done**; on 22.08 run figures + report against the real results (task 6 steps 7-9), then write report §6 |
 
 
 **Review of tasks 1-6, 2026-08-19 — one thing everyone needs to know.**
@@ -66,6 +66,24 @@ The seed now sits **above** the constructor. Verified: identical outcome across
 30 different prior RNG states, argmaxes disagreeing on all 64 observations (56
 with the alternative of seeding init and perturbation separately, so this variant
 also has the larger margin), and **0 failures in 40 fresh runs** of the file.
+
+**Report prose — §5 and §8 are drafted (Daniel, 2026-08-19).**
+`report/sections/05-coverage-measurement.md` and
+`report/sections/08-limitations.md` are written and need no results, so they were
+pulled forward off the 22nd. **§6 (Results) is deliberately not drafted** — it is
+the one section that needs `report/results.md`, which needs the sweep.
+
+Both carry measured numbers, not assertions: the loggable/task-relevant
+denominators for all 13 instances across all 5 seeds, and a new perceptual-aliasing
+measurement per instance (Empty-16 collapses 780 states into 109 distinct views,
+252 of them sharing one). Both tables are in `docs/decision_log.md`, "How much of
+each maze looks the same to the agent".
+
+**For Max:** `report/sections/03-strategies.md` does not exist yet (your task 5).
+§5.5 of Daniel's section already states why the count-based key is the agent's own
+observation rather than `(x, y, dir)`, so you do not need to re-derive it -- but
+§3.5 still owes the reader how each bonus interacts with evaluation return, which
+the professor asked for by name.
 
 ## What is available on `main` right now
 

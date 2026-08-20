@@ -3,9 +3,14 @@
 One markdown file per report section that is written by hand, so the three of us
 can write in parallel without touching the same file.
 
-| File | Section | Owner |
-|---|---|---|
-| `03-strategies.md` | 3. Exploration strategies | Max (his task 5) |
+| File | Section | Owner | State |
+|---|---|---|---|
+| `03-strategies.md` | 3. Exploration strategies | Max (his task 5) | not written yet |
+| `05-coverage-measurement.md` | 5. Coverage measurement | Daniel | drafted 2026-08-19 |
+| `08-limitations.md` | 8. Limitations | Daniel | drafted 2026-08-19 |
+
+Section 6 (Results) is Daniel's and is deliberately not drafted: it is the one
+section that cannot be written before the sweep produces `report/results.md`.
 
 The order and ownership of every section is in `report/outline.md`.
 

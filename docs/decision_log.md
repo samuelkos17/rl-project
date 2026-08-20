@@ -2634,3 +2634,130 @@ finished and merged, so a future session would have redone it.
 above). Nothing else in any number changes. What changes is that four things
 which could have put a wrong sentence, a wrong order or a wrong-by-25% number
 into the report no longer can.
+
+---
+
+## 2026-08-19 — How much of each maze looks the same to the agent
+
+**Status:** Active
+
+**What this is:** a measurement we needed for the limitations section of the
+report, and had never actually made.
+
+Our count-based strategy gives the agent a small reward for going somewhere new.
+It has to decide what "somewhere" means, and — for the reason in the report's
+Section 5.5 — it is only allowed to use what the agent itself can see, the 7x7x3
+patch in front of it. So the obvious question is: how often do two genuinely
+different places look identical through that patch? Every time they do, the
+second one is not treated as new, and the strategy is blind to it.
+
+We measured it directly. For every place the agent can stand, facing each of the
+four directions, we generated the view it would get and counted how many
+genuinely different views come out.
+
+| Maze | places to be | different views | how many collapse | worst case |
+|---|---|---|---|---|
+| Empty-5 | 32 | 26 | 19% | 2 places share a view |
+| Empty-8 | 140 | 86 | 39% | 3 |
+| Empty-16 | 780 | 109 | **86%** | **252** |
+| DoorKey-5 | 24 | 21 | 12% | 4 |
+| DoorKey-6 | 48 | 45 | 6% | 4 |
+| DoorKey-7 | 80 | 73 | 9% | 4 |
+| DoorKey-8 | 120 | 106 | 12% | 4 |
+| DoorKey-10 | 224 | 173 | 23% | 4 |
+| MultiRoom-N2 | 72 | 64 | 11% | 4 |
+| MultiRoom-N3 | 112 | 85 | 24% | 8 |
+| MultiRoom-N4 | 180 | 149 | 17% | 12 |
+| MultiRoom-N5 | 208 | 177 | 15% | 16 |
+| MultiRoom-N6 | 228 | 191 | 16% | 20 |
+
+**The number that matters is Empty-16.** In a big empty room, standing anywhere
+in the middle and looking in any direction gives you the same thing: blank floor.
+780 different situations produce only 109 different views, and one single view —
+plain empty floor — covers 252 of them. On that maze the novelty bonus is close
+to useless, because almost nowhere looks new.
+
+The mazes with structure in them do much better, usually losing 10 to 25%, since
+walls and objects give the agent something to tell places apart by.
+
+**Why we are writing this down rather than fixing it.** It cannot be fixed
+without breaking the experiment. The fix would be to count true positions instead
+of views — but then one of our four strategies would know something the other
+three do not, and any advantage it showed would be that extra knowledge rather
+than the method. The honest move is to keep the measurement fair and report how
+hard it is for this particular strategy.
+
+**Two things the table does not capture:** it is measured at the start of an
+episode, so in DoorKey it does not account for the view changing once the key is
+picked up and the door opened; and it is one layout per maze, the one seed 0
+produces.
+
+**What it means for the results:** if count-based does badly on Empty-16, we
+cannot claim that as evidence against counting. The honest sentence is that the
+method could barely see that environment. It goes in the report's limitations
+with these numbers attached.
+
+**Measured at the same time — how far apart our two coverage measures actually
+are.** The report's Section 5.3 needed this and only had it for one seed:
+
+| | ratio of task-relevant to reachable, across seeds 0-4 |
+|---|---|
+| all three Empty | 1.00 — identical, every seed |
+| DoorKey-5 | 1.00 |
+| DoorKey-6 / 7 / 8 / 10 | 0.92-1.00 / 0.80-1.00 / 0.63-1.00 / 0.46-0.96 |
+| MultiRoom-N2..N6 | between 0.59 and 1.00 depending on the layout |
+
+The spread is the point. On Empty the two measures are the *same number* and can
+tell us nothing about which predicts better; on some DoorKey layouts they are
+also identical, on others they differ by half. So the raw-versus-task-relevant
+question is answered by the larger DoorKey and MultiRoom layouts and by nothing
+else, and the report says so where the result is printed rather than in a
+footnote.
+
+---
+
+## 2026-08-20 — The normalisation error is not one number
+
+**Status:** Active
+
+**What this is:** a correction to a sentence, not to any code or any result. No
+number that goes in the results changes.
+
+Our main predictor is early coverage: we take the coverage curve over the first
+80,000 steps of a run and turn it into a single number by measuring the area
+under it. To keep that number between 0 and 1, we divide by the width of the
+window — the full 80,000 steps.
+
+There is a tempting alternative that is wrong: dividing by the distance between
+the first and the last measurement instead, 10,000 to 80,000, which is only
+70,000 steps. Dividing by a smaller number makes the result bigger. Both the
+report's Section 5.4 and the docstring in `src/rlx/analysis/coverage.py` said
+this alternative "inflates the result by 12.5%", as if that were a fixed
+property of the settings.
+
+**It is not fixed — it depends on the shape of the curve**, and 12.5% is the
+largest of the three cases we measured:
+
+| coverage curve | how much too high the wrong version reads |
+|---|---|
+| a straight line | 12.5% |
+| a curve that rises then levels off (what real runs look like) | 10.9% |
+| already flat | 6.7% |
+
+The reason is that the two versions differ in *two* ways, not one. The correct
+version divides by the bigger number, which makes it smaller — but it also
+measures the area starting from step 0 rather than from step 10,000, which adds a
+slice of area the other version leaves out. The two effects push in opposite
+directions, and how much the added slice is worth depends on how fast coverage
+was rising at the very start. On a flat curve the added slice is large and nearly
+cancels the divisor; on a straight line from zero it is small and barely does.
+
+**Why we bothered.** 12.5% is right for one specific curve shape and the report
+stated it as though it were right for all of them. The professor can recompute
+this. Saying "between 6.7% and 12.5%, depending on the curve" costs one sentence
+and is true.
+
+**Reproduce it** with three curves over `steps = 10_000 .. 80_000` in steps of
+10,000 at `total_steps = 400_000`: `1 - exp(-steps/25_000)`, `steps/160_000`, and
+a constant 0.9. Compare `early_auc(steps, cov, 400_000)` against
+`trapezoid(cov, steps) / (steps[-1] - steps[0])`.

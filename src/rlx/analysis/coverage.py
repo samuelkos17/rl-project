@@ -148,7 +148,10 @@ def early_auc(steps: np.ndarray, coverage: np.ndarray,
     far smaller: it shifts only the first trapezoid, by
     `0.5 * c(0) * snapshot_every / window` = `c(0) / 16` at the real settings,
     i.e. 0.2% of a typical early-AUC. The alternative -- normalising by the
-    observed snapshot span -- is wrong by 12.5% at those same settings.
+    observed snapshot span -- reads high at those same settings by an amount that
+    depends on the curve, because integrating from the origin also adds a first
+    trapezoid: 12.5% on a straight line, 10.9% on a saturating curve, 6.7% on a
+    flat one.
 
     Raises ValueError if fewer than two snapshots fall inside the window, or if
     the last one inside it falls short of `MIN_WINDOW_COVERED` of the edge. An
