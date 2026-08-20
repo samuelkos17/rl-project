@@ -997,8 +997,8 @@ vary in maze size.
 
 ## 2026-08-18 — Measuring Max's count-bonus question against the real mazes
 
-**Status:** OPEN — needs all three of us to agree, **before the sweep launches on
-the 20th**
+**Status:** RESOLVED 2026-08-19 — `count_beta = 0.01` was agreed and is now in
+`src/rlx/config.py`. See "2026-08-19 — The three of us agreed the knob values, and they are now fixed".
 
 **What changed:** Nothing yet. Max flagged that the novelty bonus looks far too
 big (`docs/decision_log.md`, "Count-based exploration implemented"). His estimate
@@ -1201,7 +1201,9 @@ run and drop to 8 workers if the rate looks worse than the pilot suggested.
 
 ## 2026-08-18 — The count-bonus test at 20k steps was inconclusive
 
-**Status:** OPEN — the count_beta decision is still not settled
+**Status:** SUPERSEDED 2026-08-19 — this test was inconclusive and decided
+nothing; kept so nobody repeats it. The decision was made on the scale argument:
+see "2026-08-19 — The three of us agreed the knob values, and they are now fixed".
 
 **What changed:** Nothing. Recording a test that did not answer the question, so
 nobody repeats it.
@@ -1240,7 +1242,10 @@ still has to be made before the sweep launches.
 
 ## 2026-08-18 — The 100k-step test, with a proper control
 
-**Status:** OPEN — two decisions needed before the sweep launches
+**Status:** RESOLVED 2026-08-19 — both decisions were made. `count_beta = 0.01`
+and the Boltzmann temperature schedule were agreed in
+"2026-08-19 — The three of us agreed the knob values, and they are now fixed"; `tau_start` then moved once more, to 0.1, in
+"2026-08-19 — The pilot run caught that we had over-corrected Boltzmann, and one number moves again".
 
 **What changed:** Re-ran the bonus-size comparison at 100,000 steps (a quarter of
 the real budget) instead of 20,000, and — the part we were missing before — also
