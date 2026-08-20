@@ -3175,3 +3175,95 @@ affects how we are entitled to describe it.
 `tests/test_train.py::test_count_bonus_is_keyed_on_the_successor_observation`
 pins the wiring; we checked it earns its place by reverting the change and
 confirming the test fails.
+
+---
+
+## 2026-08-20 — Added `eval_episode_len`, because a score of zero meant two different things
+
+**Status:** Active
+
+**What changed:** `metrics.csv` has a new column, `eval_episode_len` — how many
+steps the evaluation episode lasted. This is a change to the frozen results
+format in `CLAUDE.md` section 5, so **all three of us need to know about it**.
+Runs made before today do not have the column; analysis code already copes with
+columns being absent, because it has to for the per-strategy ones.
+
+**Why.** MiniGrid pays `1 - 0.9 * (steps / max_steps)` for reaching the goal and
+exactly `0` for running out of time. So a score of exactly 0.000 tells us the
+agent did not reach the goal — but not *why*. Two completely different situations
+produce the identical number:
+
+- the agent never learned the task, or
+- the agent learned the task, but the greedy policy we score it with walks in a
+  circle until the clock runs out.
+
+The first is a result. The second is a broken measurement. Until today we could
+not tell them apart, and we had both.
+
+**How we found out.** The first shard of the sweep came back — 87 runs, all
+completed. Four instances scored exactly zero on every single evaluation, and the
+obvious reading was "those mazes are too hard", which the design explicitly
+allows for. But checking the *training* score against the *evaluation* score
+split them cleanly:
+
+| | best training score | best evaluation score | what it means |
+|---|---|---|---|
+| MultiRoom-N5, N6 | 0.000 | 0.000 | genuinely never solved — a real result |
+| DoorKey-7 | 0.939 | 0.000 | solved it, scored zero |
+| DoorKey-8 | 0.288 | 0.000 | partly solved it, scored zero |
+
+Across all 87 runs, **6 reached a training score above 0.7 and still evaluated to
+exactly 0.000 on all ~80 checks**. Those six are spread over DoorKey-5,
+DoorKey-6, DoorKey-7 and Empty-16, so it is not one broken maze.
+
+**How this is possible, since it sounds impossible.** During training the agent
+is never quite greedy — every strategy keeps some randomness. During evaluation
+it is exactly greedy. Those are not slightly different; they are qualitatively
+different. A perfectly greedy agent that reaches a spot where it prefers "turn
+left" will turn left forever, because nothing about its situation changes. A tiny
+bit of randomness breaks out of that in a few steps and then the agent plays
+well. So "scores 0.94 while training, 0.00 when evaluated" is not a
+contradiction — it is what a single stuck loop looks like.
+
+It is made likelier by the fact that the agent only sees a 7x7 patch. Two
+different spots can look identical to it, which is exactly the condition for
+going round in circles. It is suggestive that one of the six is on Empty-16,
+the maze where we already measured that 780 different positions produce only 109
+different views.
+
+**What the new column proves, and what it does not.** We confirmed the shape of
+the failure: in a short test run, every evaluation that scored 0.000 had run to
+exactly `max_steps`. So a score of zero really does mean "ran out of time", never
+"finished early with nothing". What the column will now tell us, that we could
+not see before, is whether a *trained* agent is timing out — which is the
+signature of the loop.
+
+We have **not** proved the specific mechanism (that the network gives several
+actions the same value and the tie always resolves to the same one). We cannot,
+because we do not save network weights, so a finished run cannot be replayed.
+That remains a plausible explanation, not a demonstrated one.
+
+**What it means for the results.** Possibly quite a lot, and we should find out
+before writing anything up. `final_return` is the outcome variable for the whole
+central hypothesis. If it reads zero for runs that actually learned the task, the
+hypothesis is being tested against a partly broken measurement.
+
+There is a hint — and it is only a hint — that this does not hit the four
+strategies equally. All four score zero at about the same overall rate (12 to 14
+runs out of ~22 each), but the *reasons* differ: for epsilon-greedy, 13 of its 14
+zeros are cases where it never learned the maze at all, whereas 4 of count-based's
+zeros are cases where it did learn and was not credited. If that holds up, our
+comparison is partly measuring which strategy happens to produce a non-looping
+greedy policy. With 87 runs it is not statistically significant (p between 0.07
+and 0.19 depending on where the "learned it" line is drawn), so it is a thing to
+check, not a conclusion.
+
+**What to do next.** Get the other two shards in, then count how many runs have a
+high training score and a zero evaluation score, using the new column to confirm
+they are timeouts. If the pattern survives at 260 runs, the evaluation protocol
+needs fixing before the analysis is run. Note that raising `eval_episodes` will
+NOT help: evaluation is deterministic, so ten episodes return ten identical
+zeros.
+
+**Reproduce it:**
+`tests/test_train.py::test_eval_episode_length_is_logged_and_distinguishes_timeout_from_failure`

@@ -161,3 +161,34 @@ def test_count_bonus_is_keyed_on_the_successor_observation(tmp_path, monkeypatch
     # this count would be exactly len(seen).
     same = sum(1 for t in range(len(seen)) if seen[t] == observed[t])
     assert same < len(seen), "bonus key is always the current observation"
+
+
+def test_eval_episode_length_is_logged_and_distinguishes_timeout_from_failure(tmp_path):
+    """eval_episode_len separates "never learned" from "greedy policy loops".
+
+    eval_return_mean == 0.0 is ambiguous on its own: MiniGrid pays 0 exactly for
+    a timeout, and a run that never reaches the goal and a run whose greedy
+    policy cycles both time out. The length tells them apart -- a looping policy
+    burns max_steps every time. Added 2026-08-20 after 6 of 87 real runs reached
+    a training return above 0.7 while evaluating to exactly 0.0.
+    """
+    run_dir = run_training(_cfg(tmp_path))
+    df = pd.read_csv(run_dir / "metrics.csv")
+
+    assert "eval_episode_len" in df.columns
+    lengths = df["eval_episode_len"].dropna()
+    assert len(lengths) > 0
+    assert (lengths > 0).all(), "an evaluation episode cannot have zero steps"
+
+    # the column must be usable for the diagnosis it exists for: every zero-return
+    # evaluation must have run to the environment's step limit
+    from rlx.envs import make_env
+    max_steps = make_env("Empty-5", layout_seed=0).unwrapped.max_steps
+    assert (lengths <= max_steps).all(), "an episode ran past max_steps"
+
+    zero_return = df[df["eval_return_mean"] == 0.0]["eval_episode_len"].dropna()
+    if len(zero_return):
+        assert (zero_return == max_steps).all(), (
+            "a zero-return evaluation that did not reach max_steps means the "
+            "episode terminated without reward, which MiniGrid does not do"
+        )

@@ -58,28 +58,42 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def evaluate(agent: DoubleDQNAgent, cfg: RunConfig) -> tuple[float, float]:
-    """Greedy evaluation on extrinsic reward only.
+def evaluate(agent: DoubleDQNAgent, cfg: RunConfig) -> tuple[float, float, float]:
+    """Greedy evaluation on extrinsic reward only. Returns (mean, std, length).
 
     CRITICAL: no intrinsic bonus, no exploration noise. The bonus exists only
     inside the replay buffer and must never reach a reported number.
+
+    The third value is the mean episode LENGTH, and it exists to tell two very
+    different failures apart. A return of exactly 0.0 means the episode never
+    reached the goal -- but that happens both when the agent has not learned the
+    task and when it HAS learned it and the greedy policy is stuck in a cycle.
+    MiniGrid pays `1 - 0.9 * steps/max_steps` on success and exactly 0 on
+    timeout, so the return alone cannot separate them. The length can: a run that
+    burns `max_steps` on every evaluation is looping, not failing to learn.
+
+    We hit this on the real sweep (2026-08-20): 6 of 87 runs reached a training
+    return above 0.7 and still evaluated to exactly 0.0 on all ~80 checks.
+    Without this column the only evidence is circumstantial.
     """
     agent.online.set_noise_enabled(False)
     # Same pinned layout as training -- that maze IS the task being scored.
     env = make_env(cfg.env_id, layout_seed=cfg.seed)
-    returns = []
+    returns, lengths = [], []
     for _ in range(cfg.eval_episodes):
         obs, _ = env.reset()
-        total, done = 0.0, False
+        total, steps, done = 0.0, 0, False
         while not done:
             action = int(np.argmax(agent.q_values(obs)))
             obs, reward, term, trunc, _ = env.step(action)
             total += float(reward)
+            steps += 1
             done = term or trunc
         returns.append(total)
+        lengths.append(steps)
     env.close()
     agent.online.set_noise_enabled(True)
-    return float(np.mean(returns)), float(np.std(returns))
+    return float(np.mean(returns)), float(np.std(returns)), float(np.mean(lengths))
 
 
 def run_training(cfg: RunConfig) -> Path:
@@ -146,11 +160,12 @@ def run_training(cfg: RunConfig) -> Path:
             logger.snapshot(step)
 
         if step % cfg.eval_every == 0:
-            mean, std = evaluate(agent, cfg)
+            mean, std, ep_len = evaluate(agent, cfg)
             logger.log_step(
                 step,
                 eval_return_mean=mean,
                 eval_return_std=std,
+                eval_episode_len=ep_len,
                 train_return_mean=float(np.mean(episode_returns[-20:]))
                                   if episode_returns else 0.0,
                 episodes=len(episode_returns),

@@ -236,9 +236,18 @@ results/<env_id>/<strategy>/seed<k>/
 `metrics.csv` columns (exact names):
 
 ```
-step, eval_return_mean, eval_return_std, train_return_mean,
+step, eval_return_mean, eval_return_std, eval_episode_len, train_return_mean,
 episodes, distinct_states, loss, <strategy stats>
 ```
+
+`eval_episode_len` was **added 2026-08-20**, after the first shard came back. It
+is the mean length of the evaluation episode(s). It exists because
+`eval_return_mean == 0.0` is ambiguous: MiniGrid pays `1 - 0.9 * steps/max_steps`
+on success and exactly 0 on timeout, so a zero means either "never learned the
+task" or "learned it, but the greedy policy is stuck in a cycle". The length
+separates them — an episode that burns `max_steps` is looping. Runs produced
+before this date do not have the column, so analysis must tolerate it being
+absent, exactly as it already tolerates the per-strategy columns.
 
 `<strategy stats>` is whatever that run's `Explorer.stats()` returns, so the
 columns differ by strategy and that is expected:
