@@ -158,3 +158,51 @@ def test_the_two_fixtures_are_distinguishable_on_disk(generated, tmp_path):
     real_meta = json.loads((generated / "Empty-5" / "noisy" / "seed0" / "meta.json").read_text())
     assert null_meta["synthetic_effect"] is False
     assert real_meta["synthetic_effect"] is True
+
+
+def _metrics(returns):
+    """A metrics frame with one eval row per value, plus unevaluated rows."""
+    rows = []
+    for i, v in enumerate(returns):
+        rows.append({"step": i * 1000, "eval_return_mean": v})
+        rows.append({"step": i * 1000 + 500, "eval_return_mean": np.nan})
+    return pd.DataFrame(rows)
+
+
+def test_success_rate_counts_evaluations_that_reached_the_goal():
+    from rlx.analysis.aggregate import success_rate
+    assert success_rate(_metrics([0.9] * 20), n_tail=20) == 1.0
+    assert success_rate(_metrics([0.0] * 20), n_tail=20) == 0.0
+    assert success_rate(_metrics([0.0, 0.0, 0.9, 0.9]), n_tail=4) == 0.5
+    # only the tail counts: an early success does not rescue a jammed late phase
+    assert success_rate(_metrics([0.9] * 10 + [0.0] * 20), n_tail=20) == 0.0
+
+
+def test_conditional_return_averages_only_the_successes():
+    from rlx.analysis.aggregate import conditional_return
+    # the zeros must not drag it down -- that is the whole point of the split
+    assert np.isclose(conditional_return(_metrics([0.0, 0.0, 0.8, 0.9]), n_tail=4), 0.85)
+    assert np.isclose(conditional_return(_metrics([0.8, 0.9]), n_tail=2), 0.85)
+
+
+def test_conditional_return_is_nan_not_zero_when_nothing_succeeded():
+    """0 would read as "it performed badly"; the truth is "it never scored".
+
+    A run whose late-phase greedy policy always times out has no conditional
+    mean. Returning 0 would put it in the same bucket as a run that reached the
+    goal by the worst possible route.
+    """
+    from rlx.analysis.aggregate import conditional_return
+    assert np.isnan(conditional_return(_metrics([0.0] * 20), n_tail=20))
+
+
+def test_the_split_separates_a_jamming_run_from_a_bad_one():
+    """The two runs below have the SAME final_return and mean very different
+    things. Separating them is why these columns exist."""
+    from rlx.analysis.aggregate import conditional_return, final_return, success_rate
+    jams = _metrics([0.0, 0.95, 0.0, 0.0, 0.95])      # optimal when it works
+    steady = _metrics([0.38, 0.38, 0.38, 0.38, 0.38])  # always mediocre
+    assert np.isclose(final_return(jams), final_return(steady), atol=0.01)
+    assert success_rate(jams, n_tail=5) == 0.4
+    assert success_rate(steady, n_tail=5) == 1.0
+    assert conditional_return(jams, n_tail=5) > conditional_return(steady, n_tail=5)

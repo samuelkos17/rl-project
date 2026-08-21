@@ -4,9 +4,63 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-21** (fifth update, after Daniel's shard came back), by
-Daniel.
+Last updated: **2026-08-21** (sixth update, after Samuel's evaluation-jam
+measurements), by Samuel.
 
+---
+
+## HANDOFF — Max or Daniel, start here (2026-08-21, Samuel out)
+
+Three things need doing, in this order. Nothing is blocked on Samuel.
+
+**1. Max: run shard 1/3. It is the only thing missing.**
+```
+conda activate rl
+python -m rlx.sweep --config configs/main.yaml --shard 1/3 --workers 12
+```
+173 of 260 runs are in. `report.py` and `figures.py` refuse to run until all 260
+are present, by design — so nothing downstream can start without this. **Pull
+first**: runs made from older code are not comparable, and this has already cost
+two re-runs. Check with `python scripts/peek.py results` afterwards; every
+`meta.json` records the `git_sha` that produced it.
+
+**2. Then: regenerate the figures and `results.md`** (Daniel's task 6, steps 7-9).
+The analysis code is ready and nothing about it is pending.
+
+**3. Then: two team decisions**, both stated in full below — whether H1 keeps
+using `final_return` or moves to `success_rate` / `conditional_return`, and how
+the report frames the evaluation jam.
+
+**Do NOT re-run anything to "fix" the evaluation.** That option was measured and
+closed on 2026-08-21 — see the decision section below before you spend six hours
+on it.
+
+**What changed on 2026-08-21** (all in `docs/decision_log.md`, newest entries at
+the end — read those five, not the whole file):
+
+- The count-based bonus is now paid on the state the agent ARRIVES at, not the
+  one it leaves. Measured: +8.4% coverage area, 8 of 9 paired runs.
+- The NoisyNets target network no longer uses noise, so all four strategies share
+  one learning rule.
+- `_iqm` was not the interquartile mean and is now `scipy.stats.trim_mean`.
+- `metrics.csv` has a new column, `eval_episode_len` (**frozen-contract change**,
+  CLAUDE.md §5). All 173 runs on disk have it.
+- `final_return` is split into `success_rate` and `conditional_return`.
+- The design spec, `CLAUDE.md` and the glossary were carrying five superseded
+  numbers and now match the code.
+
+**Two things nobody has verified, flagged rather than buried:**
+
+- **Read Bellemare et al. 2016 before writing report §3.** The proposal cites it
+  by name for count-based exploration, and we have just changed which state the
+  bonus is keyed on. Samuel believes the paper keys on the *current* state, which
+  would make our implementation a deviation from our own citation — **this is
+  recalled, not checked.** The measurement still justifies the choice; what it
+  changes is how we are entitled to describe it.
+- **Nobody has seen what a jammed agent actually does.** "It is stuck in a cycle"
+  is inferred from every zero-scoring evaluation running exactly to the step
+  limit. We do not save network weights, so a finished run cannot be replayed.
+  One line at `RunLogger.finalize` would fix that for future work.
 
 ---
 
@@ -15,15 +69,35 @@ Daniel.
 Shard assignment is the one from line "SWEEP COMMAND for the 20th" below:
 **Samuel `0/3`, Max `1/3`, Daniel `2/3`**, 87/87/86 runs.
 
-| shard | who | state |
-|---|---|---|
-| 0/3 | Samuel | running |
-| 1/3 | Max | running |
-| 2/3 | Daniel | running, ETA 13:50 on 21.08 |
+| shard | who | state | in the merged tree? |
+|---|---|---|---|
+| 0/3 | Samuel | **done**, then RE-RUN on 21.08 for `eval_episode_len` | 87/87 |
+| 1/3 | Max | **not delivered** | **0/87** |
+| 2/3 | Daniel | **done** | 86/86 |
 
-**Send Daniel your `results/` directory when your shard finishes.** The shards do
-not overlap, so the three trees merge by plain copy. `results/` is gitignored
-(CLAUDE.md §10) — it travels by `rsync`, not through git.
+**173 of 260 runs are present. Max's shard 1/3 is the only thing missing**, and
+until it lands `report.py` and `figures.py` will refuse to run, by design.
+Verify with `python scripts/peek.py results` before interpreting anything.
+
+**Every run in the tree has `eval_episode_len`.** Samuel re-ran shard 0/3 on
+21.08 after adding the column; all 87 came back bit-identical to the previous
+version apart from the new column, so the re-run is a strict superset and nothing
+else about those runs changed. The pre-column copy is kept at
+`scratch/results_shard0_86a83ff/` on Samuel's machine only — it is gitignored and
+does NOT travel, which is fine because the re-run supersedes it.
+
+Two runs (`DoorKey-6/boltzmann/seed4`, `DoorKey-6/count_based/seed2`) record
+sha `712f03a` where the other 171 record `2baa662`. `712f03a` is a docs-only
+commit, so the code that produced them is the same — but check this yourself with
+`peek.py` rather than taking this line's word for it.
+
+**`results/` now travels through git, not by rsync.** This section said the
+opposite until 21.08. The tree was force-added onto a transport branch and merged
+(`0ffc7d6`, `ff96d3d`), so despite the `results/` line in `.gitignore` there are
+now ~692 tracked files under `results/`. Once a path is tracked, `.gitignore` no
+longer applies to it. This does not change CLAUDE.md §10 — the *final* result set
+is still committed once, deliberately — but do not assume a fresh clone lacks the
+data, and do not "fix" the gitignore expecting it to untrack anything.
 
 `report.py` and `figures.py` **refuse to run until all 260 runs are present**,
 because rliable needs every strategy to have the same seeds on every instance. A
@@ -73,17 +147,79 @@ definition until the real spread was visible. It is now visible, and **none of
 the candidates fix it**: mean of last 5 loses 7 runs, median loses 9, mean of
 last 10 loses 6, best of last 10 loses 6.
 
-Two options, and it is a team call:
+**The re-run option is CLOSED. Do not spend six hours on it.** This section
+previously said "a small amount of randomness in evaluation (e.g. 1%) breaks
+these loops". **That was a guess and it is measured false** (2026-08-21, 12 runs
+x 4 evaluation modes x 307 evaluations, `docs/decision_log.md`, "We tested three
+ways to fix the evaluation jam"):
 
-- **Accept and document.** No re-runs. The report states that 21% of solved runs
-  are scored zero for reasons unrelated to exploration, which weakens the central
-  correlation.
-- **Change the evaluation protocol and re-run all 260.** A small amount of
-  randomness in evaluation (e.g. 1%) breaks these loops, but it redefines "greedy
-  evaluation" and must apply to every run.
+| how we evaluate | evaluations returning exactly 0 |
+|---|---|
+| greedy (what we do) | 74.0% |
+| greedy, ties broken at random | **74.0% — bit-identical, so there are no ties** |
+| 1% random actions | 69.1% |
+| 5% random actions | 60.3% |
+
+Five percent randomness buys 74% -> 60%, and costs us the greedy evaluation the
+professor asked for by name. It is not a fix. Random tie-breaking is not either:
+it is *identical* to six decimals on all 12 runs, which is only possible if the
+predicted values never tie exactly. Samuel's earlier "argmax resolves ties to
+turn-left" explanation is **refuted** — do not repeat it in the report.
+
+**So there is one option, and it is now implemented rather than pending:**
+accept the jam as a property of the learned policy and report it as a finding.
+`final_return` has been split into `success_rate` (share of the last 20
+evaluations that reached the goal) and `conditional_return` (mean score over
+those that did, NaN when none did). Both are columns on the analysis table and
+`results.md` has a section for them. **Nothing needs re-running.**
+
+On the merged 173-run tree this is the headline it produces: success rate
+0.345 / 0.234 / 0.195 / 0.174 (boltzmann / noisy / count-based / epsilon-greedy)
+against conditional returns of **0.943 / 0.953 / 0.886 / 0.951**. When the greedy
+policy does not jam, all four strategies score within 7 points of each other.
+Essentially all of the spread in `final_return` is how OFTEN the policy works,
+not how well it does the task.
+
+**Still open, and it is a genuine team call:** whether H1's correlation should
+keep using `final_return` or move to one of the two new columns. Samuel
+deliberately did not change that — swapping the response variable of the central
+hypothesis is not a change to make on one person's judgement. `final_return` is
+still computed and still what `within_instance_correlation` uses.
 
 Samuel's `eval_episode_len` column proves the mechanism on runs made from
 2026-08-20 onward. It diagnoses; it does not fix.
+
+**The two shards report different-looking numbers for this. They agree — the
+denominators differ.** Do not treat them as conflicting evidence:
+
+| number | what it counts | shard |
+|---|---|---|
+| **7 of 33 (21%)** | solved *runs* whose FINAL SCORE is 0.000 | Daniel, 2/3 |
+| **3 of 34** | the same quantity | Samuel, 0/3 |
+| **45.8%** | individual *evaluations* that time out, counting only those after the run first solved its maze | Samuel, 0/3 |
+
+The 45.8% is per-evaluation and the 21% is per-run, so the first is much larger
+by construction: a run survives unless the timeouts happen to land on the last
+few checkpoints that its final score averages. Confirmed on shard 0/3: **every
+zero-scoring evaluation in all 87 runs ran to exactly `max_steps` — no
+exceptions.**
+
+Two further measurements from shard 0/3 that bear directly on the decision:
+
+- **The timeout rate differs sharply by strategy** — noisy 24%, boltzmann 37%,
+  epsilon-greedy 58%, count-based 67% (Kruskal-Wallis p = 0.006 pooled; the
+  ordering also holds within 4 of the 5 instances that have 3+ strategies, and
+  reverses on MultiRoom-N2).
+- **Conditioned on the greedy policy not getting stuck, the four strategies score
+  almost identically** — 0.939 / 0.853 / 0.947 / 0.947. So the strategy
+  differences in the headline number come mostly from how often the policy gets
+  stuck, not from how well the agent does the task. This is the strongest single
+  argument for changing the protocol rather than documenting around it.
+
+Taking the median instead of the mean does **not** help and makes it worse (a
+median is robust only below 50% contamination; count-based is at 67%). Daniel
+measured the same thing independently on his shard: median loses 9 runs where the
+mean loses 7.
 
 ---
 

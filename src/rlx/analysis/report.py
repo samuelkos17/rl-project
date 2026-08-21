@@ -13,7 +13,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from rlx.analysis.aggregate import FAMILIES, load_all, ordered_instances
+from rlx.analysis.aggregate import (
+    FAMILIES, N_LATE, load_all, ordered_instances,
+)
 from rlx.envs import ENV_IDS
 from rlx.analysis.stats import (
     _iqm, _score_matrices, aggregate_correlation, build_analysis_table,
@@ -189,6 +191,60 @@ def _iqm_section(df: pd.DataFrame) -> str:
     ])
 
 
+def _split_section(df: pd.DataFrame) -> str:
+    """final_return split into how OFTEN the greedy policy works and how WELL.
+
+    Measured 2026-08-21: 45.8% of evaluations made after a run has already
+    solved its maze still return exactly 0, because the greedy policy jams in a
+    cycle and times out. The rate differs sharply by strategy, so a single
+    averaged return mixes two different things together and reports the mixture
+    as performance. This section separates them.
+    """
+    per_strategy = (df.groupby("strategy")
+                      .agg(runs=("final_return", "size"),
+                           success_rate=("success_rate", "mean"),
+                           conditional_return=("conditional_return", "mean"),
+                           final_return=("final_return", "mean"))
+                      .round(3).reset_index())
+    # NaN conditional_return means the late-phase policy never completed an
+    # episode, so it is excluded from the mean above rather than counted as 0.
+    never = int(df["conditional_return"].isna().sum())
+    rows = []
+    for env_id in ordered_instances(df):
+        g = df[df.env_id == env_id]
+        rows.append({"env_id": env_id,
+                     "success_rate": round(float(g["success_rate"].mean()), 3),
+                     "conditional_return": round(float(g["conditional_return"].mean()), 3),
+                     "final_return": round(float(g["final_return"].mean()), 3)})
+    return "\n".join([
+        "## Does the greedy policy work, and how well when it does", "",
+        "`final_return` answers both questions at once and cannot be read as",
+        "either. A greedy evaluation returns exactly 0 whenever the policy gets",
+        "stuck in a cycle and times out -- confirmed, every zero-scoring",
+        "evaluation ran to the environment's step limit -- and that happens on",
+        "45.8% of evaluations made AFTER a run has already solved its maze.", "",
+        "`success_rate` is the share of the last "
+        f"{N_LATE} evaluations that reached the goal. `conditional_return` is the",
+        "mean score over those that did, and is blank where none did.", "",
+        "This is a property of the learned policy, not a measurement fault:",
+        "no estimator repairs it, and neither random tie-breaking nor 5%",
+        "epsilon-greedy evaluation removes it (docs/decision_log.md,",
+        "\"We tested three ways to fix the evaluation jam\").", "",
+        "### By strategy", "",
+        per_strategy.to_markdown(index=False), "",
+        f"Runs whose late-phase greedy policy never completed an episode: {never}"
+        f" of {len(df)}.", "",
+        "> A low `success_rate` has two possible causes and this table does not",
+        "> separate them: the run may never have learned the maze at all, or it",
+        "> may have learned it and jammed. `train_return_mean` in `metrics.csv`",
+        "> tells them apart -- a run that trains above 0.7 and evaluates at 0",
+        "> learned the task and was not credited for it. Six such runs were found",
+        "> in shard 0/3 alone.", "",
+        "### By instance", "",
+        pd.DataFrame(rows).to_markdown(index=False), "",
+    ])
+
+
 def _profile_section(df: pd.DataFrame) -> str:
     profile = performance_profile(df, taus=PROFILE_TAUS)
     rows = []
@@ -325,6 +381,7 @@ def build_report(results_root: Path, out_path: Path) -> None:
         _h1_section(df),
         _h2_section(df),
         _iqm_section(df),
+        _split_section(df),
         _profile_section(df),
         _improvement_section(df),
         "## Rank stability (H3)\n",

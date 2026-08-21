@@ -86,6 +86,52 @@ def final_return(metrics: pd.DataFrame, n_tail: int = 5) -> float:
     return float(metrics["eval_return_mean"].dropna().tail(n_tail).mean())
 
 
+#: Evaluation points used by success_rate and conditional_return.
+#: Wider than final_return's 5 on purpose: those two split one number into a
+#: RATE and a conditional mean, and a rate over 5 samples can only take the
+#: values 0, 0.2, 0.4, 0.6, 0.8, 1. Twenty points -- the last 100k of 400k
+#: steps -- give 0.05 resolution while still describing only the late phase.
+N_LATE = 20
+
+
+def success_rate(metrics: pd.DataFrame, n_tail: int = N_LATE) -> float:
+    """Fraction of the last n_tail evaluations that reached the goal.
+
+    Half of the split that replaces final_return as the headline. Measured
+    2026-08-21: a greedy evaluation returns exactly 0 on 45.8% of checks made
+    AFTER a run has already solved its maze, because the greedy policy jams in a
+    cycle and times out. That rate differs sharply by strategy (noisy 24% to
+    count-based 67%), so a single averaged return silently mixes "how often does
+    the policy work" with "how well does it do when it works". This is the first
+    of those two questions.
+
+    It is a property of the learned greedy policy, not a measurement fault: no
+    estimator repairs it and neither random tie-breaking nor 5% epsilon-greedy
+    evaluation removes it. See docs/decision_log.md, "We tested three ways to fix
+    the evaluation jam".
+    """
+    tail = metrics["eval_return_mean"].dropna().tail(n_tail)
+    if tail.empty:
+        return float("nan")
+    return float((tail > 0).mean())
+
+
+def conditional_return(metrics: pd.DataFrame, n_tail: int = N_LATE) -> float:
+    """Mean return over the last n_tail evaluations THAT REACHED THE GOAL.
+
+    The other half of the split: how well the policy does when it does not jam.
+    Returns NaN, never 0, when none of the tail succeeded -- there is no
+    conditional mean to report, and 0 would read as "it performed badly" when
+    the truth is "it never completed an episode to score". Analysis must expect
+    the NaN; it marks a run whose late-phase greedy policy never worked.
+    """
+    tail = metrics["eval_return_mean"].dropna().tail(n_tail)
+    scored = tail[tail > 0]
+    if scored.empty:
+        return float("nan")
+    return float(scored.mean())
+
+
 def ordered_instances(df: pd.DataFrame) -> list[str]:
     """Instance names in report order: family first, then difficulty.
 
@@ -116,6 +162,9 @@ def to_dataframe(runs: list[RunResult]) -> pd.DataFrame:
             "strategy": r.strategy,
             "seed": r.seed,
             "final_return": final_return(r.metrics),
+            # final_return, split into its two parts. See success_rate.
+            "success_rate": success_rate(r.metrics),
+            "conditional_return": conditional_return(r.metrics),
         }
         for r in runs
     ])

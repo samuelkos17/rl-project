@@ -3630,3 +3630,74 @@ It gives the limitations section a measured statement instead of a plausible
 story: where nothing is ever found, epsilon-greedy's "greedy" half is not
 exploiting knowledge, because there is no knowledge — and we can say so with
 numbers.
+
+---
+
+## 2026-08-21 — We tested three ways to fix the evaluation jam. None of them work.
+
+**Status:** Active — this closes off the "just fix the evaluation" option.
+
+**What this is:** a measurement, prompted by a guess of Samuel's that turned out
+to be wrong. The wrong guess is recorded because it was steering the plan.
+
+**The guess.** Evaluation picks the action with the highest predicted value. When
+several actions are tied for highest, `np.argmax` always returns the first one,
+which in MiniGrid is "turn left". Daniel had just measured that on mazes where
+the agent never sees a reward its predictions collapse to about a 79th of normal
+size, with the best and worst action separated by three ten-thousandths. That
+makes exact ties sound very likely. So the story was: ties, always resolved the
+same way, agent turns left forever.
+
+If that were right, the fix would be free — break ties at random. That is still a
+greedy policy, so it would be a bug fix rather than a change to what we promised
+the professor, and it would need no change to the design document.
+
+**The measurement.** 12 runs (Empty-5, Empty-8, DoorKey-6 x count-based and
+epsilon-greedy x 2 seeds), 200,000 steps each. At every evaluation point the
+*same* network was scored four ways: normal greedy, greedy with ties broken at
+random, and epsilon-greedy at 1% and 5%. Training was untouched. 307 evaluations
+after the first one that scored.
+
+| how we evaluate | evaluations returning exactly 0 | average score |
+|---|---|---|
+| greedy (what we do) | 74.0% | 0.248 |
+| greedy, ties broken at random | **74.0%** | **0.248** |
+| 1% random actions | 69.1% | 0.274 |
+| 5% random actions | 60.3% | 0.298 |
+
+**The guess was wrong.** Random tie-breaking is not merely a weak fix — it is
+*bit-identical* to what we already do, on every one of the 12 runs, to six
+decimal places. Two ways of resolving ties can only agree that exactly if there
+are no ties to resolve. So the predicted values are never exactly equal, even
+when they are only three ten-thousandths apart, and the collapse Daniel measured
+does not produce ties. It produces very small differences, which is not the same
+thing.
+
+**And randomness does not rescue it either.** Adding 5% random actions takes the
+failure rate from 74% to 60%. Over an episode of several hundred steps that is
+dozens of random actions, and the policy still ends up stuck three times in five.
+Whatever the agent is caught in, it is not a two-step loop that one nudge breaks
+— it is something it returns to after being pushed out.
+
+**What this rules out.** The whole "just fix the evaluation protocol and re-run"
+plan. It was the leading option this morning. It would cost about six hours on
+the slowest of our three machines, and it would buy a reduction from 74% to 60%,
+while also forcing us to tell the professor we no longer evaluate greedily —
+which is something he asked for by name.
+
+**What it means for the results.** The stuck greedy policy is looking less like a
+measurement fault and more like a real property of what these agents learn. An
+agent can solve its maze while exploring and still have a best-guess policy that
+does not, and no reasonable way of scoring gets around that. That is a finding
+about DQN in partially observed gridworlds, and it is more interesting than the
+bug we thought we had.
+
+**What is still unknown.** We have not seen what the agent actually does when it
+is stuck — we do not save network weights, so a finished run cannot be replayed.
+"It is caught in a cycle" is still an inference from the fact that every
+zero-scoring evaluation runs exactly to the step limit. Saving weights costs one
+line and would settle it; it is too late for this sweep.
+
+**Reproduce it:** the experiment script is in the scratchpad; it patches
+`rlx.train.evaluate` to score four ways and returns the greedy result so the run
+proceeds normally.
