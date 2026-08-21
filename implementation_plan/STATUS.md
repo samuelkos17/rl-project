@@ -4,9 +4,86 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-19** (fourth update, after the review of Daniel's tasks
-1-6), by Daniel.
+Last updated: **2026-08-21** (fifth update, after Daniel's shard came back), by
+Daniel.
 
+
+---
+
+## Sweep status, 2026-08-21
+
+Shard assignment is the one from line "SWEEP COMMAND for the 20th" below:
+**Samuel `0/3`, Max `1/3`, Daniel `2/3`**, 87/87/86 runs.
+
+| shard | who | state |
+|---|---|---|
+| 0/3 | Samuel | running |
+| 1/3 | Max | running |
+| 2/3 | Daniel | running, ETA 13:50 on 21.08 |
+
+**Send Daniel your `results/` directory when your shard finishes.** The shards do
+not overlap, so the three trees merge by plain copy. `results/` is gitignored
+(CLAUDE.md §10) — it travels by `rsync`, not through git.
+
+`report.py` and `figures.py` **refuse to run until all 260 runs are present**,
+because rliable needs every strategy to have the same seeds on every instance. A
+missing shard yields no partial answer, it yields no answer. That refusal is
+deliberate; do not work around it. To look at an incomplete tree, use
+`python scripts/peek.py results`.
+
+**Check the code version before merging trees.** `python scripts/peek.py` prints
+it: every `meta.json` records the `git_sha` that produced its run, and peek
+groups them and flags anything that is not HEAD. Two different values in one tree
+means part of it was made by different code. This bit us twice on 2026-08-20 —
+once for the count-based bonus keying, once for the NoisyNets target — and both
+times cost a re-run.
+
+**Timing, measured** (Daniel, 4 cores, `--workers 4`): 86 runs in 6.0 hours of
+wall-clock time. Per run, `meta.json` reports 761 s fastest, 892 s median, 1282 s
+slowest. No environment family is an outlier, MultiRoom included. On 8 workers
+expect roughly half — that is arithmetic, not a measurement.
+
+---
+
+## Read this before you interpret any number
+
+Five measurements from 2026-08-21, written up in full in `docs/decision_log.md`
+(five entries at the end, all dated 2026-08-21):
+
+1. **Seven of thirty-three solved runs are scored zero, and no estimator fixes
+   it.** This is the one that needs a decision from all three of us — see below.
+2. **Six instances may never show anyone a reward.** A purely random agent scores
+   zero goal hits on MultiRoom-N4, N5 and N6, and two in 4165 episodes on N3.
+   Those instances still answer the difficulty question, but not the
+   coverage-versus-score one.
+3. **The seed changes the maze more than the difficulty step does.** DoorKey-6 on
+   its luckiest layout is easier than DoorKey-5 on its unluckiest. Never compare
+   strategies run on different seeds.
+4. **Empty-5 is at the ceiling of the coverage metric** — most runs produce the
+   identical maximum value, so the instance cannot answer hypothesis 1.
+5. **When a run never sees a reward its value predictions collapse** to about
+   1/79th of normal size, and the greedy choice is then made on a gap of 0.0003.
+   Measured, not assumed.
+
+**DECISION NEEDED before anyone interprets the results.** Of the 33 runs in
+Daniel's shard that solved their maze at least once, **7 end with a final score
+of exactly 0.000** — the greedy policy is stuck in a loop for the entire late
+phase of training. The 2026-08-20 entry postponed the choice of final-score
+definition until the real spread was visible. It is now visible, and **none of
+the candidates fix it**: mean of last 5 loses 7 runs, median loses 9, mean of
+last 10 loses 6, best of last 10 loses 6.
+
+Two options, and it is a team call:
+
+- **Accept and document.** No re-runs. The report states that 21% of solved runs
+  are scored zero for reasons unrelated to exploration, which weakens the central
+  correlation.
+- **Change the evaluation protocol and re-run all 260.** A small amount of
+  randomness in evaluation (e.g. 1%) breaks these loops, but it redefines "greedy
+  evaluation" and must apply to every run.
+
+Samuel's `eval_episode_len` column proves the mechanism on runs made from
+2026-08-20 onward. It diagnoses; it does not fix.
 
 ---
 
@@ -16,7 +93,7 @@ Last updated: **2026-08-19** (fourth update, after the review of Daniel's tasks
 |---|---|---|---|---|
 | **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
 | **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets, ✅ knob calibration (`tau_start` 0.1 after pilot) | — | 5 write-ups |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold, ✅ review of 1-6, ✅ report §5 + §8 drafted | — | **all analysis tasks done**; on 22.08 run figures + report against the real results (task 6 steps 7-9), then write report §6 |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold, ✅ review of 1-6, ✅ report §5 + §8 drafted | **shard 2/3 running**, ETA 13:50 on 21.08 | on 22.08 run figures + report against the real results (task 6 steps 7-9), then write report §6 |
 
 
 **Review of tasks 1-6, 2026-08-19 — one thing everyone needs to know.**
