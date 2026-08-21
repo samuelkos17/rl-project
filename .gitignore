@@ -11,7 +11,7 @@ venv/
 .idea
 # Results are generated, not source. Committed once at the end in a single
 # dedicated commit -- see CLAUDE.md section 10.
-results/
+
 results_pilot/
 results_synthetic/
 # The --no-effect negative control, same generator, 8.6 MB. Same rule.
@@ -19,7 +19,7 @@ results_synthetic_noeffect/
 *.partial/
 
 # Local scratch output (Windows has no /tmp)
-scratch/
+
 
 # Generated figures
 report/figures/

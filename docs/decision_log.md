@@ -3267,3 +3267,115 @@ zeros.
 
 **Reproduce it:**
 `tests/test_train.py::test_eval_episode_length_is_logged_and_distinguishes_timeout_from_failure`
+
+---
+
+## 2026-08-21 — The score we are measuring is mostly measuring something else
+
+**Status:** Active — needs a decision from all three of us
+
+**What changed:** Nothing in the code. We re-ran shard 0/3 with the new
+`eval_episode_len` column and it answered the question it was added for. The
+answer is worse than expected and it affects the central result.
+
+**First, the re-run is clean.** All 87 runs came back **bit-identical** to the
+previous version apart from the new column, so adding the counter changed
+nothing about how the agent behaves. The old copy is kept at
+`scratch/results_shard0_86a83ff/`.
+
+**What we found.**
+
+Across all 87 runs, **every single evaluation that scored zero had run to the
+step limit**. Not one exception. So a zero never means "finished without
+reward" — it always means "ran out of time". The six runs we were chasing all
+came back the same way: 80 of 80 evaluations at exactly the limit, on mazes they
+had demonstrably learned to solve.
+
+But the six were the tip of it. Counting only evaluations that happen *after* a
+run has already solved the maze at least once — so this is not an agent that has
+yet to learn — **45.8% of evaluations return zero**. Nearly half. And this is not
+early-training noise: the failures are scattered right through to the end of
+training.
+
+The pattern is stark. When the greedy policy works on Empty-5 it reaches the goal
+in 5 steps, which is optimal. When it does not work it spins for the full 100
+steps and scores nothing. There is almost no middle ground. It is not an agent
+performing *badly*; it is an agent alternating between perfect and stuck.
+
+**Why this happens.** During training the agent always keeps a little randomness.
+During evaluation it has none — it always takes its single best-rated action. If
+it ever reaches a spot where its best-rated action leads back to where it came
+from, it will do that forever, because nothing about its situation ever changes.
+A single random action would break the loop, and in training there always is one.
+This is made worse by the fact that the agent only sees a 7x7 patch, so genuinely
+different spots can look identical to it.
+
+**Why it is a problem and not just a curiosity.** A run's final score is the
+average of its last 5 evaluations. If nearly half of those are zero for reasons
+unrelated to how well the agent learned, then the final score is close to a coin
+flip. Ten of the 34 runs that can solve their maze scored below half of what they
+demonstrably achieve; three scored exactly zero.
+
+**The part that should worry us most.** The failure rate is very different
+between strategies:
+
+| strategy | evaluations that time out after the maze was solved |
+|---|---|
+| noisy | 24% |
+| boltzmann | 37% |
+| epsilon-greedy | 58% |
+| count-based | 67% |
+
+Pooled across instances this is unlikely to be chance (Kruskal-Wallis
+p = 0.006). We checked it is not just the pooling trap: within a single maze the
+ordering holds in 4 of the 5 mazes where at least three strategies are present.
+It reverses on MultiRoom-N2, where noisy is the worst. So it is a real effect
+with at least one clear exception.
+
+Now the important bit. If we look only at the evaluations that *did* work, and
+ask how well the agent did on those, the four strategies are nearly identical:
+
+| strategy | score when the greedy policy does not get stuck |
+|---|---|
+| boltzmann | 0.939 |
+| count-based | 0.853 |
+| epsilon-greedy | 0.947 |
+| noisy | 0.947 |
+
+**So the difference between strategies in our headline number comes almost
+entirely from how often the greedy policy gets stuck, and almost not at all from
+how well the agent does the task.** As it stands we would be publishing a
+comparison of exploration strategies whose main driver is something else.
+
+**What does NOT fix it.**
+
+- More evaluation episodes. Evaluation is deterministic, so ten episodes return
+  ten identical zeros. This is the point where our original reasoning for
+  `eval_episodes = 1` turns out to have been about the wrong thing: it is correct
+  that repeating an evaluation gives the same answer, and irrelevant, because the
+  variation is between checkpoints rather than within one.
+- Taking the median of the last 5 instead of the mean. We checked: it is
+  **worse**, scoring 10 runs at zero instead of 3. A median is only robust while
+  fewer than half the samples are contaminated, and for count-based two thirds
+  are.
+
+**The options, none free.**
+
+1. **Evaluate with a small amount of randomness** (say 5%), which breaks the
+   loops. This measures what we actually want. It needs all 260 runs redone —
+   about 2.5 hours per machine, which does fit before the deadline — and it means
+   evaluation is no longer strictly greedy, which has to be stated.
+2. **Keep the runs and report differently:** give both how often the greedy
+   policy succeeds and how well it does when it succeeds, and discuss the
+   split honestly. No re-running. Weaker, but truthful, and it turns the problem
+   into a finding.
+3. **Do nothing and report the current number.** Not defensible now that we know.
+
+**What it means for the results:** Until this is settled, no strategy ranking
+from this data should be trusted, including any preliminary one. The coverage
+measurements are unaffected — they come from the visitation logs and never touch
+evaluation.
+
+**Reproduce it:** for any run, load `metrics.csv`, take the evaluations from the
+first non-zero one onwards, and count how many are exactly 0. Compare
+`eval_episode_len` on those against the environment's `max_steps`.
