@@ -3267,3 +3267,255 @@ zeros.
 
 **Reproduce it:**
 `tests/test_train.py::test_eval_episode_length_is_logged_and_distinguishes_timeout_from_failure`
+
+---
+
+## 2026-08-21 — Seven of thirty-three solved runs are scored zero, and no estimator fixes it
+
+**Status:** Active — decision needed from all three of us before the results are
+interpreted.
+
+**What this is:** the measurement the 2026-08-20 entry "The 400k sanity run"
+deliberately postponed. That entry found that greedy evaluation sometimes returns
+0.000 on an agent that has clearly learned the task, and decided to choose the
+final-score definition *after* the sweep, "looking at the real spread across all
+13 mazes" rather than at one run. The first full shard is now in, so we can look.
+
+**The answer is worse than expected, and no choice of definition rescues it.**
+
+Measured on 86 runs (shard 2/3, code `86a83ff`). 33 of them solved their maze at
+least once — meaning `eval_return_mean` was above 0 at some point during
+training. Of those 33, **7 end up with a final score of exactly 0.000**, which is
+21%.
+
+We tried the obvious alternatives:
+
+| how the final score is defined | solved runs scored 0.000 |
+|---|---|
+| mean of the last 5 checks (what the spec says) | **7** |
+| median of the last 5 checks | **9** — worse |
+| mean of the last 10 checks | 6 |
+| best of the last 10 checks | 6 |
+
+**Why nothing helps.** We assumed this was noise: a lucky or unlucky evaluation
+at the end, which averaging over more checks would smooth away. It is not. In the
+affected runs the greedy policy is stuck for nearly the whole late phase, so
+there is almost nothing left to average against. Empty-8 / NoisyNets / seed 3
+reached 0.961 during training and then scored 0.000 on **all 40** checks after
+step 200,000. DoorKey-8 / count-based / seed 4 reached 0.983 and scored 0.000 on
+**38 of 40** — the two non-zero checks are not enough to lift a mean over the
+last five, and they were not among the last five.
+
+**Why it matters.** The final score is the response variable of the entire study
+— the thing coverage is supposed to predict. A systematic 21% error in it, which
+has nothing to do with exploration, will weaken any correlation we find. It does
+not create a false result, it hides a real one.
+
+**A worry we cannot yet settle.** The 7 affected runs are 4 count-based, 2
+epsilon-greedy, 1 NoisyNets, while count-based is only 26% of all runs. That
+would mean the measurement error falls hardest on the strategy the hypothesis
+predicts should win. With 7 cases this is far too thin to claim, and we are not
+claiming it — but it is a reason not to shrug the problem off, and it should be
+re-checked on the full 260.
+
+**Two ways forward, and this is a team decision.**
+
+1. **Accept and document.** Nothing to re-run. The report states that 21% of
+   solved runs are scored zero for a reason unrelated to exploration, and that
+   this attenuates the central correlation. Honest, cheap, and weakens the
+   headline result.
+2. **Change the evaluation protocol and re-run everything.** A very small amount
+   of randomness during evaluation (for example 1% random actions) breaks these
+   loops reliably. But it changes what "greedy evaluation" means, so it must
+   apply to all 260 runs — a complete restart of all three shards.
+
+Samuel's new `eval_episode_len` column will *prove* the mechanism on the runs
+made from 2026-08-20 onward: an evaluation that burns exactly `max_steps` was
+looping, not failing to learn. It diagnoses the problem; it does not fix it.
+
+**Reproduce it:** for every run, read `eval_return_mean` from `metrics.csv`, drop
+the empty rows, and compare `max()` against the mean of the last 5 values. A run
+with a positive maximum and a final score of 0.000 is one of these cases.
+
+---
+
+## 2026-08-21 — Six instances may never show anyone a reward
+
+**Status:** Active
+
+**What this is:** a measurement of the experiment matrix, not a change to any
+code. It tells us which of the 13 environment instances can produce a usable
+result at all.
+
+In every environment we use, the agent is paid 0 for every step except the one
+where it steps onto the goal. An agent that never once reaches the goal sees
+nothing but zeros and has nothing to learn from.
+
+So we asked the cheapest version of the question: **can a purely random agent
+ever stumble onto the goal?** No network involved, 50,000 random actions per
+seed, five seeds per instance.
+
+| Instance | goal hits per episode | Instance | goal hits per episode |
+|---|---|---|---|
+| Empty-5 | 40.8% | DoorKey-8 | 1.5% |
+| Empty-8 | 21.3% | DoorKey-10 | 0.8% |
+| Empty-16 | 10.8% | MultiRoom-N2 | 0.6% |
+| DoorKey-5 | 7.9% | MultiRoom-N3 | 0.05% |
+| DoorKey-6 | 2.6% | MultiRoom-N4 | **0.0%** |
+| DoorKey-7 | 2.3% | MultiRoom-N5 | **0.0%** |
+| | | MultiRoom-N6 | **0.0%** |
+
+MultiRoom-N4, N5 and N6 produced **zero** goal hits in 3125, 2500 and 2080
+episodes respectively. N3 produced two in 4165.
+
+The cause is the step limit. MiniGrid allows MultiRoom `20 * N` steps — 80 for
+N4, 120 for N6 — on a 25x25 grid. Our design already checked that the *shortest*
+route fits inside that (about 53 steps on N6). Fitting and being findable are not
+the same thing.
+
+**What it means for the results.** The central test correlates two numbers within
+one instance, and needs both to vary across that instance's 20 runs. Where every
+run scores exactly 0, the score does not vary and the correlation does not exist.
+`stats.py` already reports those as "no variance, excluded" rather than a silent
+`NaN`, and `STATUS.md` had predicted DoorKey-10 and MultiRoom-N6 as candidates.
+This says the list is longer.
+
+Those runs are not wasted: "every strategy fails here" is a real point on the
+difficulty curve, which is the report's second hypothesis.
+
+**One honest limit.** A random agent is not our four strategies. Count-based in
+particular steers itself toward the unseen, so it could in principle find a goal
+a random walk never would. This table says where undirected wandering fails; it
+does not prove every strategy fails there.
+
+**Reproduce it:** step `make_env(env_id, layout_seed=s)` with uniformly random
+actions for 50,000 steps, count steps where `reward > 0`, divide by episodes.
+
+---
+
+## 2026-08-21 — The seed changes the maze more than the difficulty step does
+
+**Status:** Active
+
+Each run is pinned to one maze chosen by its seed, so five seeds give five mazes
+per instance — for DoorKey and MultiRoom; the Empty family generates the same
+layout for every seed, as `STATUS.md` already notes.
+
+We assumed those five were five samples of roughly equal difficulty. They are
+not. Same random-agent probe as the entry above, per seed, goal hits out of
+episodes:
+
+| Instance | seed 0 | seed 1 | seed 2 | seed 3 | seed 4 |
+|---|---|---|---|---|---|
+| DoorKey-5 | 11/203 | 27/210 | 6/201 | 14/203 | 23/209 |
+| DoorKey-6 | 1/139 | 11/141 | 1/138 | 3/140 | 2/138 |
+| DoorKey-7 | **0**/102 | 9/104 | **0**/102 | **0**/102 | 3/103 |
+| DoorKey-8 | **0**/78 | 2/78 | **0**/78 | **0**/78 | 4/79 |
+| DoorKey-10 | **0**/50 | 1/50 | **0**/50 | 1/50 | **0**/50 |
+| MultiRoom-N2 | 2/1250 | **0**/1250 | 7/1252 | 29/1258 | 1/1250 |
+| MultiRoom-N3 | 1/833 | 1/833 | **0**/833 | **0**/833 | **0**/833 |
+
+Read DoorKey-6 seed 1 (8%) against DoorKey-5 seed 2 (3%): the harder instance on
+a lucky layout beats the easier instance on an unlucky one. The spread between
+seeds is wider than the step between neighbouring difficulty levels.
+
+**What it means for the results.**
+
+1. **Never compare strategies across different seeds.** A table averaging
+   strategy A over seeds 0 and 2 against strategy B over seeds 1 and 4 compares
+   mazes, not strategies. This is why `report.py` and `figures.py` refuse to run
+   until every strategy has every seed on every instance. That refusal should
+   stay.
+2. **Expect two-humped results, not neat averages.** Within one instance a run
+   tends to either solve its maze or score 0. The arithmetic mean of
+   `[0, 0, 0, 0.95, 0.95]` describes nothing that happened. This is what the
+   design's IQM (interquartile mean) and bootstrap intervals are for — nothing
+   needs to change, but the report should say why those tools are there.
+
+---
+
+## 2026-08-21 — Empty-5 sits at the ceiling of the coverage metric
+
+**Status:** Active
+
+Our main predictor is early coverage: how much of the maze a run had visited in
+the first 80,000 steps, expressed as one number between 0 and 1.
+
+On Empty-5 that number is **0.9375 for most runs**, and 0.9375 is the largest
+value the metric can produce at our settings. Measured on the six Empty-5 runs of
+shard 2/3:
+
+| run | early coverage | coverage at the first snapshot (step 10,000) |
+|---|---|---|
+| boltzmann seed 0 | 0.9375 | 1.000 |
+| boltzmann seed 3 | 0.9375 | 1.000 |
+| epsilon-greedy seed 2 | 0.9375 | 1.000 |
+| NoisyNets seed 2 | 0.9375 | 1.000 |
+| count-based seed 4 | 0.9297 | 0.938 |
+| count-based seed 1 | 0.9219 | 0.875 |
+
+Four of six runs had already seen **everything there is to see** at the very
+first measurement point. The missing 0.0625 is not something they failed to do:
+it comes from our convention of starting the area calculation at step 0 with a
+coverage of 0, which costs exactly `snapshot_every / (2 * window)` =
+`10,000 / 160,000` no matter how good the agent is.
+
+**Measuring more often would not help.** Empty-5 has 8 loggable squares, each
+enterable facing 4 directions, so 32 states in total. Anything that moves sees
+all of them within a few hundred steps. This is the maze being tiny, not our
+snapshot spacing being coarse.
+
+**What it means for the results.** Empty-5 contributes almost nothing to the
+first hypothesis: with the predictor pinned at an identical value for most runs,
+there is barely any spread to correlate against. This matches the synthetic
+fixture, where Empty-5 came out at rho +0.13, p 0.58. It is a real finding and
+belongs in the report — the easy end of the difficulty axis cannot answer the
+question, which is itself consistent with the hypothesis that the effect grows
+with difficulty — but it must not be presented as a weak result. It is an absent
+one.
+
+---
+
+## 2026-08-21 — What a run learns when it never sees a reward
+
+**Status:** Active
+
+**What this is:** a measurement prompted by a guess that turned out to be half
+wrong. Both halves are recorded, because the wrong half is the useful part.
+
+**The guess.** On an instance where the agent never reaches the goal, every
+reward it stores is 0, so the network predicting future reward is trained to
+output 0 everywhere. Once it does, "take the action with the highest predicted
+value" is choosing between seven numbers that are all essentially zero. We
+guessed this collapses into one constant action, which would mean epsilon-greedy
+stops exploring entirely once its random share drops to 5% — and explores *worse*
+than a coin flip.
+
+**The measurement.** 100,000 steps of the real training loop on DoorKey-8 seed 0,
+which never finds the goal, against DoorKey-5 seed 0, which does, as a control.
+Afterwards the trained network was shown 2,000 situations.
+
+| | DoorKey-8 (0 rewards seen) | DoorKey-5 (157 rewards seen) |
+|---|---|---|
+| average size of a predicted value | 0.0084 | 0.667 |
+| average gap between best and worst action | 0.00033 | 0.0043 |
+| share taken by the most common greedy action | 55.5% | 42.5% |
+
+**Confirmed.** The predictions do collapse — 79 times smaller, and the gap the
+agent chooses on is 13 times narrower, about three ten-thousandths. For the last
+320,000 steps of such a run, 95% of all actions are picked by comparing numbers
+that small. That is not a learned preference; it is leftover numerical noise in
+an untrained network.
+
+**Not confirmed.** It does not become one constant action: the most common choice
+covers 55.5% against 42.5% in the control — more concentrated, nowhere near
+frozen. The follow-on guess, that this makes epsilon-greedy explore less than a
+purely random agent, is **not established**. The single comparison available
+(DoorKey-8 seed 0, same 400,000 steps: the trained run touched 26 squares, a
+random walk touched 28) is far too narrow a margin to call on one seed.
+
+**What it means for the results.** Nothing changes in the code or in any number.
+It gives the limitations section a measured statement instead of a plausible
+story: where nothing is ever found, epsilon-greedy's "greedy" half is not
+exploiting knowledge, because there is no knowledge — and we can say so with
+numbers.
