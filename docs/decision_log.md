@@ -3701,3 +3701,207 @@ line and would settle it; it is too late for this sweep.
 **Reproduce it:** the experiment script is in the scratchpad; it patches
 `rlx.train.evaluate` to score four ways and returns the greedy result so the run
 proceeds normally.
+
+
+## 2026-08-22 — We report H1 under two definitions of "did well", not one
+
+**Status:** Active — this settles the open question left by the 2026-08-21
+entries. Nothing was re-run.
+
+**The question.** Every run ends with one number saying how well the agent ended
+up doing, and our first hypothesis (more early exploration → better final
+performance) is tested against that number. Until today that number was
+`final_return`. The 2026-08-21 measurements showed it answers two questions at
+once, and Samuel deliberately left the choice open rather than making it alone.
+
+**Why one number was two.** The evaluation is greedy: the agent always takes the
+move it currently rates highest, with no randomness. MiniGrid pays a score
+between 0 and 1 for reaching the goal and exactly 0 for running out of time. A
+greedy policy can walk into a loop and never escape, so it times out and scores
+0 — even on a maze the agent has already solved during training. That happens on
+45.8% of evaluations taken after a run first solved its maze, and the rate
+differs sharply by strategy (noisy 24%, boltzmann 37%, epsilon-greedy 58%,
+count-based 67%).
+
+So `final_return` is roughly *how often the policy works* × *how well it does
+when it works*. The three columns now on the table:
+
+| column | what it answers | how it is computed |
+|---|---|---|
+| `final_return` | both at once | mean score over the last 5 evaluations, zeros included |
+| `success_rate` | how OFTEN it works | share of the last 20 evaluations that reached the goal |
+| `conditional_return` | how WELL, when it works | mean score over only the evaluations that reached the goal |
+
+**The decision: report H1 under `final_return` *and* `success_rate`, side by
+side.** `report/results.md` now prints all four verdicts (two definitions of
+performance × raw and task-relevant coverage) in one table, then the full detail
+for each. H2 is stated both ways too, for the same reason: it is the same
+correlation machinery against the same response variable, and reporting H1 both
+ways while pinning H2 to one would leave the two verdicts describing different
+quantities.
+
+**Why report both rather than pick one.** Picking one would have been a choice we
+then had to defend, and we would have been making it *after* already knowing that
+H1 fails under `final_return` — which is exactly the "go looking for a slicing of
+the data that makes it true" that spec §1 was written to prevent. Reporting both
+removes the choice instead of justifying it. If the verdict is the same either
+way, that is a robustness result and stronger than either number alone. If the
+two had disagreed, that disagreement would itself have been the finding.
+
+The order of events matters and is recorded here on purpose: the reason to
+distrust `final_return` was measured on 2026-08-21, before the full 260-run tree
+existed, for reasons that had nothing to do with what H1 would say. The
+alternative correlation was not computed until after this decision was taken.
+
+**Why `conditional_return` is NOT one of the two.** It is the only column that
+cleanly isolates "how good is this agent", and it is unusable as a response
+variable. It is blank whenever a run never once finished, which is **167 of the
+260 runs**. Per instance, out of 20 runs each:
+
+| instance | usable | instance | usable | instance | usable |
+|---|---|---|---|---|---|
+| Empty-5 | 20 | DoorKey-6 | 9 | MultiRoom-N2 | 13 |
+| Empty-8 | 16 | DoorKey-7 | 2 | MultiRoom-N3 | 3 |
+| Empty-16 | 15 | DoorKey-8 | 1 | MultiRoom-N4 | 1 |
+| DoorKey-5 | 12 | DoorKey-10 | 1 | MultiRoom-N5 | 0 |
+| | | | | MultiRoom-N6 | 0 |
+
+A within-instance correlation on one or two points is not a correlation. It stays
+on the table as a descriptive number — it is what shows that the four strategies
+score almost identically when the policy does not jam — but nothing is correlated
+against it.
+
+**What changed in the code.** `within_instance_correlation` and
+`compare_coverage_predictors` take a `return_col` argument, defaulting to
+`final_return` so nothing else moved. `report.py` loops over both. Four tests
+cover it, including one that would pass if `return_col` were accepted and then
+ignored — the fixture is built so coverage moves *with* `success_rate` and
+*against* `final_return`, so an ignored argument produces the wrong sign rather
+than a silent pass.
+
+**What we did not do.** The figures still plot `final_return` only. They are
+illustrations of the results table, not the verdict, and doubling seven figures
+to make the same point the table already makes plainly was not worth it. If §6
+of the report leans on a `success_rate` figure, that is a small addition to
+`figures.py`, not a redesign.
+
+---
+
+## 2026-08-22 — What the real results showed
+
+**Status:** Active — the last entry, and the one to reread while writing the
+discussion section.
+
+All 260 runs are in (13 mazes × 4 strategies × 5 seeds). Every number below is
+from `report/results.md`, regenerated from the full tree.
+
+**The headline number:** the within-instance correlation between early coverage
+and final performance is **+0.061**, 95% confidence interval **−0.142 to
++0.258**. The interval contains zero, so the data cannot distinguish this from no
+relationship at all. **Hypothesis 1 is not supported.**
+
+**It is not supported under either definition of performance.** This is the point
+of the decision entry above:
+
+| scored by | coverage | mean rho | 95% CI | trend with difficulty | H1 confirmed |
+|---|---|---|---|---|---|
+| `final_return` | raw | +0.061 | [−0.142, +0.258] | −0.300 | False |
+| `final_return` | task-relevant | +0.097 | [−0.113, +0.300] | −0.300 | False |
+| `success_rate` | raw | +0.065 | [−0.136, +0.261] | −0.633 | False |
+| `success_rate` | task-relevant | +0.102 | [−0.107, +0.302] | −0.633 | False |
+
+The four answers agree, and they agree closely — the correlation moves by 0.005
+when the response variable changes. The verdict does not depend on the choice we
+were worried about.
+
+**Did it get stronger on harder mazes, as we predicted?** No — it got *weaker*.
+We predicted a positive trend; we measured **−0.300** (or −0.633 under
+`success_rate`). The relationship, such as it is, is strongest on the easy mazes
+and disappears on the hard ones.
+
+**Do not lean hard on that trend number.** It is measured on three families of
+3 to 5 instances each, and it is fragile. The whole difference between −0.300 and
+−0.633 is the Empty family flipping from +0.5 to −0.5, and that flip is caused by
+Empty-5 (rho 0.207458) edging past Empty-16 (rho 0.207141) — a gap of three
+ten-thousandths swapping two ranks out of three. The honest statement is "no
+positive trend", not "a trend of −0.633".
+
+**Raw vs task-relevant coverage (H2):** task-relevant predicts very slightly
+better (+0.097 vs +0.061), but the confidence intervals overlap heavily, so
+**H2 is not supported** either. Both correlations are positive and neither is
+distinguishable from the other or from zero. Note that 4 of the 13 instances
+(all three Empty mazes and DoorKey-5) cannot answer H2 at all — there the two
+coverage measures are the same number for every run.
+
+**Which strategy won:** **Boltzmann**, on the aggregate interquartile mean
+(IQM — the mean after dropping the best and worst quarter of runs, so one lucky
+seed cannot carry it):
+
+| strategy | IQM | 95% CI | success rate | score when it does not jam |
+|---|---|---|---|---|
+| boltzmann | 0.175 | [0.086, 0.263] | 0.319 | 0.949 |
+| count-based | 0.062 | [0.015, 0.140] | 0.213 | 0.905 |
+| epsilon-greedy | 0.040 | [0.000, 0.122] | 0.189 | 0.944 |
+| noisy | 0.010 | [0.000, 0.081] | 0.225 | 0.949 |
+
+Read those intervals carefully. Boltzmann's [0.086, 0.263] clears NoisyNets'
+[0.000, 0.081], so that gap is real. It **overlaps** both count-based's and
+epsilon-greedy's, so "Boltzmann beat epsilon-greedy overall" is not a claim the
+aggregate supports on its own. The clean per-instance separations are where the
+strategy difference is defensible: on DoorKey-5, Boltzmann scores 0.964
+[0.319, 0.975] against NoisyNets' 0.000 [0.000, 0.000] on all five seeds.
+
+**Did the winner stay the same as mazes got harder?** No. Boltzmann wins overall
+but wins nowhere in the Empty family — NoisyNets takes all three Empty mazes,
+Boltzmann takes DoorKey-5 and DoorKey-6, epsilon-greedy takes MultiRoom-N2 and
+count-based takes MultiRoom-N3. Kendall's tau against the easiest maze of each
+family falls from 1.0 to 0.333 (Empty) and to −0.236 (MultiRoom-N3, i.e. the
+order is close to reversed). **Hypothesis 3 — the ranking changes with
+difficulty — is the one that holds.**
+
+**Where everything failed:** on **DoorKey-7, DoorKey-8, DoorKey-10,
+MultiRoom-N4, MultiRoom-N5 and MultiRoom-N6** — 6 of 13 instances, 120 runs — no
+strategy has an IQM above zero. That is a real finding and goes in the report as
+one.
+
+**State it as "solved it reliably", not "never solved it".** 5 of those 120 runs
+did reach the goal: 2 on DoorKey-7 (one finishing at 0.976), 1 each on DoorKey-8,
+DoorKey-10 and MultiRoom-N4. The IQM drops the best and worst quarter of runs, so
+a single solved seed in five is trimmed away and the aggregate reads 0. Only
+**MultiRoom-N5 and MultiRoom-N6** are instances where no run ever scored — and
+they are exactly the two instances that drop out of every correlation, because
+with every run tied at zero there is nothing to correlate.
+
+`report/results.md` said "no strategy ever reached the goal" on all six until
+today. That was false on four of them, and it was found by trying to check it
+before writing it down here. The table now says "no strategy solved it reliably"
+and carries a `runs_that_scored` column, so the two cases can be told apart at a
+glance. Same class of mistake as the `ci_excludes_zero` name fixed on
+2026-08-19: a label asserting more than the number underneath it.
+
+**What surprised us.** Two things.
+
+First, the four strategies are nearly identical at the task and differ mostly in
+reliability. When the greedy policy does not jam, they score 0.949 / 0.949 /
+0.944 / 0.905 — within five points of each other. Almost the whole visible spread
+between strategies is how *often* the learned policy works, not how *well*. We
+set out to compare exploration strategies and found ourselves measuring how often
+a greedy policy walks into a loop.
+
+Second, NoisyNets is last overall and first on every Empty maze. It has the
+second-best success rate (0.225) and the joint-best conditional score (0.949) —
+its low IQM comes from catastrophic failure on DoorKey, where it scored zero on
+DoorKey-5 across all five seeds while Boltzmann scored 0.964.
+
+**What did NOT hold:** H1 (early coverage predicts final performance) and H2
+(task-relevant coverage predicts better than raw). Both fail, under both
+definitions of performance, and the difficulty trend runs the opposite way to our
+prediction. H3 holds.
+
+That is two of our three hypotheses not supported, and the report says so
+plainly. The measurement is sound, the comparison is controlled, and the answer
+is "no" — which is an answer. What we can say positively is narrower than what we
+set out to show: exploration strategy *does* matter — on DoorKey-5 the gap
+between Boltzmann and NoisyNets is total and the intervals do not touch — but
+early state coverage is not the mechanism that explains why, and beyond a
+difficulty threshold no strategy we tested works reliably at all.

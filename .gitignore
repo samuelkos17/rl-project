@@ -9,8 +9,6 @@ dist/
 .python-version
 venv/
 .idea
-# Results are generated, not source. Committed once at the end in a single
-# dedicated commit -- see CLAUDE.md section 10.
 
 results_pilot/
 results_synthetic/
@@ -20,9 +18,6 @@ results_synthetic_noeffect/
 
 # Local scratch output (Windows has no /tmp)
 
-
-# Generated figures
-report/figures/
 
 # OS / editor
 .DS_Store

@@ -597,3 +597,67 @@ def test_no_interval_when_most_resamples_are_degenerate():
     healthy = rng.random(20)
     lo, hi = _bootstrap_spearman_ci(x, healthy, np.random.default_rng(1))
     assert np.isfinite([lo, hi]).all() and lo <= hi
+
+
+# --- H1 reported under two response definitions ------------------------------
+# Decision of 2026-08-22: final_return blends "how often the greedy policy
+# works" with "how well it does when it works", so H1 is reported against BOTH
+# final_return and success_rate rather than either alone. These three tests
+# cover the machinery that makes that possible.
+
+def _two_response_frame(rows):
+    return pd.DataFrame(rows, columns=["env_id", "difficulty", "strategy", "seed",
+                                       "final_return", "success_rate",
+                                       "early_auc_raw", "early_auc_task"])
+
+
+def test_the_response_variable_can_be_changed():
+    """Coverage moves WITH success_rate and AGAINST final_return here, so a
+    return_col that is accepted and then ignored gives the wrong sign instead of
+    passing quietly."""
+    rows = [["Empty-5", 5, f"s{i}", 0, 1.0 - i * 0.1, i * 0.1, float(i), float(i)]
+            for i in range(10)]
+    df = _two_response_frame(rows)
+
+    default = within_instance_correlation(df, "early_auc_raw")
+    switched = within_instance_correlation(df, "early_auc_raw",
+                                           return_col="success_rate")
+
+    assert np.isclose(default["rho"].iloc[0], -1.0)
+    assert np.isclose(switched["rho"].iloc[0], +1.0)
+
+
+def test_no_variance_is_judged_on_the_chosen_response_column():
+    """final_return is tied on this instance and success_rate is not. Leaving the
+    nunique() guard on final_return would discard an instance that success_rate
+    can still answer -- 167 of the 260 real runs never completed a late-phase
+    episode, so this is the common case, not an edge case."""
+    rows = [["MultiRoom-N6", 6, f"s{i}", 0, 0.0, i * 0.1, 0.1 + i * 0.01,
+             0.1 + i * 0.01] for i in range(10)]
+    df = _two_response_frame(rows)
+
+    assert np.isnan(within_instance_correlation(df, "early_auc_raw")["rho"].iloc[0])
+    switched = within_instance_correlation(df, "early_auc_raw",
+                                           return_col="success_rate")
+    assert np.isclose(switched["rho"].iloc[0], 1.0)
+
+
+def test_h2_can_be_computed_on_an_alternative_response_column():
+    """H2 compares two PREDICTORS, but it does so against a response variable,
+    and it must be the same one H1 used or the two verdicts describe different
+    quantities. Task-relevant coverage tracks success_rate perfectly here and raw
+    coverage does not."""
+    # raw coverage is deliberately scrambled against success_rate (Spearman
+    # -0.03), task-relevant coverage tracks it exactly.
+    scrambled = [0.3, 0.1, 0.5, 0.0, 0.4, 0.2]
+    rows = []
+    for level, env_id in enumerate(("Empty-5", "DoorKey-5", "DoorKey-8")):
+        for i in range(6):
+            rows.append([env_id, level, f"s{i}", i,
+                         0.0, i * 0.1, scrambled[i], i * 0.1])
+    df = _two_response_frame(rows)
+
+    cmp = compare_coverage_predictors(df, return_col="success_rate")
+
+    assert np.isclose(cmp["task"]["mean_rho"], 1.0), cmp["task"]["mean_rho"]
+    assert cmp["task"]["mean_rho"] > cmp["raw"]["mean_rho"]

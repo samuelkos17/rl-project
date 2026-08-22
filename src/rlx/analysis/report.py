@@ -28,6 +28,21 @@ from rlx.analysis.stats import (
 COVERAGE_COLUMNS = (("early_auc_raw", "Raw coverage"),
                     ("early_auc_task", "Task-relevant coverage"))
 
+#: The two definitions of "did this run end up doing well", both reported for
+#: H1 and H2. See docs/decision_log.md, 2026-08-22: `final_return` scores a
+#: jammed greedy policy as exactly 0, so it blends how OFTEN the policy reaches
+#: the goal with how WELL it does when it gets there. Printing both is what
+#: keeps the response variable from being a choice we would have to defend.
+#: `conditional_return` is deliberately NOT here -- it is undefined for 167 of
+#: the 260 real runs, and for 19 of 20 on DoorKey-8, so a within-instance
+#: correlation on it would be computed from one or two points.
+RESPONSE_COLUMNS = (
+    ("final_return", "Mean score over the last 5 evaluations, counting a jammed "
+                     "greedy policy as 0. Blends reliability with quality."),
+    ("success_rate", f"Share of the last {N_LATE} evaluations that reached the "
+                     "goal at all. Reliability only."),
+)
+
 #: 11 thresholds is enough to read the shape of a profile off a table; fig5
 #: draws the full curve at 21.
 PROFILE_TAUS = np.linspace(0.0, 1.0, 11)
@@ -66,48 +81,95 @@ def _in_report_order(per_instance: pd.DataFrame) -> pd.DataFrame:
     return per_instance.sort_values("env_id", key=lambda s: s.map(order), kind="stable")
 
 
+def _h1_verdict_table(computed: dict) -> str:
+    """The four verdicts in one view: 2 response definitions x 2 coverage measures.
+
+    Printed before the detail so the first thing a reader sees is whether the
+    answer depends on which definition of performance we use. If it does, that
+    dependence is itself the finding and belongs in the discussion.
+    """
+    rows = []
+    for return_col, _ in RESPONSE_COLUMNS:
+        for column, label in COVERAGE_COLUMNS:
+            agg = computed[(return_col, column)][1]
+            rows.append({
+                "scored_by": return_col,
+                "coverage": label,
+                "mean_rho": _num(agg["mean_rho"]),
+                "95% CI": _ci(agg["ci_low"], agg["ci_high"]),
+                "CI above zero": agg["ci_above_zero"],
+                "trend": _num(agg["trend_with_difficulty"]),
+                "instances used": agg["n_instances"],
+                "confirms_h1": agg["confirms_h1"],
+            })
+    # disable_numparse: every number here is already a formatted string, and
+    # tabulate re-parses numeric-looking strings, which drops the leading "+"
+    # that the rest of the file prints on every correlation.
+    return pd.DataFrame(rows).to_markdown(index=False, disable_numparse=True)
+
+
 def _h1_section(df: pd.DataFrame) -> str:
+    computed = {}
+    for return_col, _ in RESPONSE_COLUMNS:
+        for column, _label in COVERAGE_COLUMNS:
+            per = within_instance_correlation(df, column, return_col=return_col)
+            computed[(return_col, column)] = (per, aggregate_correlation(per))
+
     lines = [
-        "## H1 -- does early coverage predict final return?", "",
-        "Spearman rho between early-coverage AUC and final return, computed",
-        "WITHIN each instance (difficulty held constant) and only then aggregated.",
-        "A correlation pooled across instances would measure \"hard environments",
-        "are hard\" twice and call it a result -- see CLAUDE.md section 9.", "",
+        "## H1 -- does early coverage predict final performance?", "",
+        "Spearman rho between early-coverage AUC and end-of-training performance,",
+        "computed WITHIN each instance (difficulty held constant) and only then",
+        "aggregated. A correlation pooled across instances would measure \"hard",
+        "environments are hard\" twice and call it a result -- see CLAUDE.md",
+        "section 9.", "",
+        "**H1 is reported under two definitions of performance, not one.** A",
+        "greedy evaluation scores exactly 0 whenever the learned policy jams in a",
+        "cycle and times out, which happens on 45.8% of the evaluations taken",
+        "after a run has already solved its maze, at rates that differ sharply by",
+        "strategy. `final_return` therefore blends how OFTEN the policy works with",
+        "how WELL it works. Neither column is the true answer, and neither was",
+        "picked after seeing what the other said: both are printed so the reader",
+        "can check whether the verdict survives the choice. See",
+        "docs/decision_log.md, 2026-08-22.", "",
+        "### Verdicts at a glance", "",
+        _h1_verdict_table(computed), "",
     ]
-    for column, label in COVERAGE_COLUMNS:
-        per = within_instance_correlation(df, column)
-        agg = aggregate_correlation(per)
-        lines += [
-            f"### {label}", "",
-            f"- Mean within-instance rho: **{_num(agg['mean_rho'])}**",
-            f"- 95% bootstrap CI on that mean: {_ci(agg['ci_low'], agg['ci_high'])}",
-            f"- 95% CI lies entirely above zero: **{agg['ci_above_zero']}**",
-            f"- Instances with usable variance: {agg['n_instances']} of "
-            f"{df['env_id'].nunique()}",
-            f"- Trend with difficulty: {_num(agg['trend_with_difficulty'])} "
-            f"(H1 predicts positive: stronger on harder mazes)",
-            f"- Trend per family: {_trend_per_family(agg)}",
-            f"- **H1 confirmed (CI entirely above zero AND trend positive): "
-            f"{agg['confirms_h1']}**", "",
-        ]
-        if agg["n_instances"] < 3:
-            # A bootstrap CI over one or two numbers is not an interval, and it
-            # can still print "entirely above zero". Say so where the number
-            # is, not in a footnote nobody reads.
+    for return_col, blurb in RESPONSE_COLUMNS:
+        lines += [f"### Scored by `{return_col}`", "", blurb, ""]
+        for column, label in COVERAGE_COLUMNS:
+            per, agg = computed[(return_col, column)]
             lines += [
-                "> **Do not quote that CI.** It resamples "
-                + ("a single per-instance correlation" if agg["n_instances"] == 1
-                   else f"{agg['n_instances']} per-instance correlations")
-                + ", so it says nothing about the spread. The honest headline "
-                "when this happens is that almost every run scored the same and "
-                "there was nothing left to correlate.",
-                "",
+            f"#### {label}", "",
+                f"- Mean within-instance rho: **{_num(agg['mean_rho'])}**",
+                f"- 95% bootstrap CI on that mean: {_ci(agg['ci_low'], agg['ci_high'])}",
+                f"- 95% CI lies entirely above zero: **{agg['ci_above_zero']}**",
+                f"- Instances with usable variance: {agg['n_instances']} of "
+                f"{df['env_id'].nunique()}",
+                f"- Trend with difficulty: {_num(agg['trend_with_difficulty'])} "
+                f"(H1 predicts positive: stronger on harder mazes)",
+                f"- Trend per family: {_trend_per_family(agg)}",
+                f"- **H1 confirmed (CI entirely above zero AND trend positive): "
+                f"{agg['confirms_h1']}**", "",
             ]
-        lines += [
-            "Per instance. A NaN `rho` means every run on that instance scored the",
-            "same, so there was nothing to correlate. That is a finding, not a gap:",
-            "", _in_report_order(per).round(3).to_markdown(index=False), "",
-        ]
+            if agg["n_instances"] < 3:
+                # A bootstrap CI over one or two numbers is not an interval, and
+                # it can still print "entirely above zero". Say so where the
+                # number is, not in a footnote nobody reads.
+                lines += [
+                    "> **Do not quote that CI.** It resamples "
+                    + ("a single per-instance correlation" if agg["n_instances"] == 1
+                       else f"{agg['n_instances']} per-instance correlations")
+                    + ", so it says nothing about the spread. The honest headline "
+                    "when this happens is that almost every run scored the same "
+                    "and there was nothing left to correlate.",
+                    "",
+                ]
+            lines += [
+                f"Per instance, scored by `{return_col}`. A NaN `rho` means every",
+                "run on that instance scored the same, so there was nothing to",
+                "correlate. That is a finding, not a gap:",
+                "", _in_report_order(per).round(3).to_markdown(index=False), "",
+            ]
     return "\n".join(lines)
 
 
@@ -129,8 +191,6 @@ def _identical_predictor_instances(df: pd.DataFrame) -> list[str]:
 
 def _h2_section(df: pd.DataFrame) -> str:
     """H2 is a comparison of two intervals, so the file states the verdict."""
-    cmp = compare_coverage_predictors(df)
-    raw, task = cmp["raw"], cmp["task"]
     tied = _identical_predictor_instances(df)
     # Which instances DO separate the two measures is read off the data too. On
     # the pilot, DoorKey-5 is itself one of the tied ones, so a sentence that
@@ -150,21 +210,32 @@ def _h2_section(df: pd.DataFrame) -> str:
         "distinction has to be shown doing real work.",
         "",
     ] if tied else []
-    return "\n".join([
+    lines = [
         "## H2 -- is task-relevant coverage the better predictor?", "",
         *caveat,
-        f"- Raw coverage: {_num(raw['mean_rho'])} "
-        f"{_ci(raw['ci_low'], raw['ci_high'])}",
-        f"- Task-relevant coverage: {_num(task['mean_rho'])} "
-        f"{_ci(task['ci_low'], task['ci_high'])}",
-        f"- Difference (task - raw): {_num(cmp['task_minus_raw'])}",
-        f"- The two CIs overlap: {cmp['cis_overlap']}",
-        f"- **H2 confirmed (larger AND non-overlapping CIs): "
-        f"{cmp['confirms_h2']}**", "",
+        "Stated under both definitions of performance, for the same reason H1 is.",
+        "",
+    ]
+    for return_col, _ in RESPONSE_COLUMNS:
+        cmp = compare_coverage_predictors(df, return_col=return_col)
+        raw, task = cmp["raw"], cmp["task"]
+        lines += [
+            f"### Scored by `{return_col}`", "",
+            f"- Raw coverage: {_num(raw['mean_rho'])} "
+            f"{_ci(raw['ci_low'], raw['ci_high'])}",
+            f"- Task-relevant coverage: {_num(task['mean_rho'])} "
+            f"{_ci(task['ci_low'], task['ci_high'])}",
+            f"- Difference (task - raw): {_num(cmp['task_minus_raw'])}",
+            f"- The two CIs overlap: {cmp['cis_overlap']}",
+            f"- **H2 confirmed (larger AND non-overlapping CIs): "
+            f"{cmp['confirms_h2']}**", "",
+        ]
+    lines += [
         "Overlapping CIs with both correlations positive is not a failed",
         "experiment: it says breadth of exploration matters and directedness",
         "does not.", "",
-    ])
+    ]
+    return "\n".join(lines)
 
 
 def _iqm_section(df: pd.DataFrame) -> str:
@@ -318,20 +389,33 @@ def _winners_section(df: pd.DataFrame) -> str:
         # identical, not because they are close. Two strategies that merely sit
         # near each other are separated by their CIs, not by this column.
         tied = sorted(iqm.index[iqm == best])
+        # How many individual runs finished at all. IQM trims the top and bottom
+        # quarter, so one solved seed in five is trimmed away and every IQM is
+        # 0.0 -- on the real DoorKey-7 that happened while one run scored 0.976.
+        # The old label read "no strategy ever reached the goal", which was false
+        # on exactly those instances. Print the count and let it speak.
+        scored = int((group["final_return"] > 0).sum())
         rows.append({
             "env_id": env_id,
-            "best_strategy": ("none -- no strategy ever reached the goal"
+            "best_strategy": ("none -- no strategy solved it reliably"
                               if best <= 0.0 else " = ".join(tied)),
             "iqm": round(best, 3),
             "tied_strategies": len(tied),
+            "runs_that_scored": f"{scored} of {len(group)}",
         })
     return "\n".join([
         "## Best strategy per instance", "",
         "Ranked by IQM, the same statistic as the rank-stability table, so the",
-        "two cannot contradict each other. An instance nothing solved has no",
-        "winner and says so; strategies with an identical IQM are all named.",
-        "Before calling any of these a win, check whether the CIs in the IQM",
-        "table above actually separate it from the runner-up.", "",
+        "two cannot contradict each other. Strategies with an identical IQM are",
+        "all named. Before calling any of these a win, check whether the CIs in",
+        "the IQM table above actually separate it from the runner-up.", "",
+        "`runs_that_scored` counts the individual runs whose late-phase greedy",
+        "policy finished at least one evaluation episode. It is there because an",
+        "IQM of 0 for every strategy does NOT mean no run ever reached the goal:",
+        "the IQM drops the best and worst quarter, so a single solved seed in",
+        "five is trimmed away. Read the two columns together -- `0 of 20` is an",
+        "instance nothing solved, `1 of 20` is an instance one seed solved and",
+        "the aggregate could not see.", "",
         pd.DataFrame(rows).to_markdown(index=False), "",
     ])
 

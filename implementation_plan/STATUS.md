@@ -4,120 +4,87 @@
 place the other two look to answer "can I start yet?".
 
 
-Last updated: **2026-08-21** (sixth update, after Samuel's evaluation-jam
-measurements), by Samuel.
+Last updated: **2026-08-22** (seventh update, after the full sweep landed and
+the H1 response-variable decision), by Samuel.
 
 ---
 
-## HANDOFF — Max or Daniel, start here (2026-08-21, Samuel out)
+## HANDOFF — 2026-08-22, the sweep is DONE. What is left is writing.
 
-Three things need doing, in this order. Nothing is blocked on Samuel.
+**All 260 runs are in.** Max's shard 1/3 landed in `ec4a2cc`. The blocker that
+this section described all through the 21st is gone; `report.py` and
+`figures.py` both run.
 
-**1. Max: run shard 1/3. It is the only thing missing.**
+**Regenerated against the full tree, both verified today:**
+- `report/results.md` — 260 runs, every section populated.
+- `report/figures/` — all 7 figures (14 files, PNG + PDF, ~1.3 MB).
+  `report/figures/` **was** gitignored and the ignore rule was removed on
+  22.08, so the figures are now committable and will travel with the repo.
+  Regenerate locally with the command below rather than hand-editing them.
+
 ```
-conda activate rl
-python -m rlx.sweep --config configs/main.yaml --shard 1/3 --workers 12
+python -m rlx.analysis.figures --results results --out report/figures
+python -m rlx.analysis.report  --results results --out report/results.md
 ```
-173 of 260 runs are in. `report.py` and `figures.py` refuse to run until all 260
-are present, by design — so nothing downstream can start without this. **Pull
-first**: runs made from older code are not comparable, and this has already cost
-two re-runs. Check with `python scripts/peek.py results` afterwards; every
-`meta.json` records the `git_sha` that produced it.
 
-**2. Then: regenerate the figures and `results.md`** (Daniel's task 6, steps 7-9).
-The analysis code is ready and nothing about it is pending.
+**The H1 response-variable question is DECIDED: we report both.** See
+`docs/decision_log.md`, "2026-08-22 — We report H1 under two definitions of
+'did well', not one". `report/results.md` now states H1 and H2 under
+`final_return` *and* `success_rate`, four verdicts in one summary table.
+Nothing was re-run. **Do not reopen this to pick one** — reporting both is what
+keeps the choice from being something we have to defend, and the verdict is the
+same either way.
 
-**3. Then: two team decisions**, both stated in full below — whether H1 keeps
-using `final_return` or moves to `success_rate` / `conditional_return`, and how
-the report frames the evaluation jam.
+**What is left, and it is all prose.** Sections owned per `report/outline.md`:
 
-**Do NOT re-run anything to "fix" the evaluation.** That option was measured and
-closed on 2026-08-21 — see the decision section below before you spend six hours
-on it.
+| Section | Owner | State |
+|---|---|---|
+| 1. Introduction, 2. Background, 4. Setup, 9. Conclusion | Samuel | not written |
+| 3. Exploration strategies | **Max** | not written — his task 5, never started |
+| 6. Results | **Daniel** | not written; every number it needs is now in `report/results.md` |
+| 7. Discussion | all three | not written; write it against the two 2026-08-22 decision-log entries |
+| 5. Coverage measurement, 8. Limitations | Daniel | drafted 2026-08-19 |
 
-**What changed on 2026-08-21** (all in `docs/decision_log.md`, newest entries at
-the end — read those five, not the whole file):
+**Read `docs/decision_log.md`, the two entries dated 2026-08-22, before writing
+anything.** They carry the verdicts, the numbers, and the three places where a
+number is more fragile than it looks.
 
-- The count-based bonus is now paid on the state the agent ARRIVES at, not the
-  one it leaves. Measured: +8.4% coverage area, 8 of 9 paired runs.
-- The NoisyNets target network no longer uses noise, so all four strategies share
-  one learning rule.
-- `_iqm` was not the interquartile mean and is now `scipy.stats.trim_mean`.
-- `metrics.csv` has a new column, `eval_episode_len` (**frozen-contract change**,
-  CLAUDE.md §5). All 173 runs on disk have it.
-- `final_return` is split into `success_rate` and `conditional_return`.
-- The design spec, `CLAUDE.md` and the glossary were carrying five superseded
-  numbers and now match the code.
-
-**Two things nobody has verified, flagged rather than buried:**
-
-- **Read Bellemare et al. 2016 before writing report §3.** The proposal cites it
-  by name for count-based exploration, and we have just changed which state the
-  bonus is keyed on. Samuel believes the paper keys on the *current* state, which
-  would make our implementation a deviation from our own citation — **this is
-  recalled, not checked.** The measurement still justifies the choice; what it
-  changes is how we are entitled to describe it.
-- **Nobody has seen what a jammed agent actually does.** "It is stuck in a cycle"
-  is inferred from every zero-scoring evaluation running exactly to the step
-  limit. We do not save network weights, so a finished run cannot be replayed.
-  One line at `RunLogger.finalize` would fix that for future work.
+**Deadline is 2026-08-23.** No compute is outstanding.
 
 ---
 
-## Sweep status, 2026-08-21
-
-Shard assignment is the one from line "SWEEP COMMAND for the 20th" below:
-**Samuel `0/3`, Max `1/3`, Daniel `2/3`**, 87/87/86 runs.
+## Sweep status — COMPLETE, 2026-08-22
 
 | shard | who | state | in the merged tree? |
 |---|---|---|---|
-| 0/3 | Samuel | **done**, then RE-RUN on 21.08 for `eval_episode_len` | 87/87 |
-| 1/3 | Max | **not delivered** | **0/87** |
-| 2/3 | Daniel | **done** | 86/86 |
+| 0/3 | Samuel | done, re-run on 21.08 for `eval_episode_len` | 87/87 |
+| 1/3 | Max | **delivered 22.08** (`ec4a2cc`) | 87/87 |
+| 2/3 | Daniel | done | 86/86 |
 
-**173 of 260 runs are present. Max's shard 1/3 is the only thing missing**, and
-until it lands `report.py` and `figures.py` will refuse to run, by design.
-Verify with `python scripts/peek.py results` before interpreting anything.
+**260 of 260.** Verified with `python scripts/peek.py results`: 5 seeds present
+for every (instance x strategy) cell, all 13 instances.
 
-**Every run in the tree has `eval_episode_len`.** Samuel re-ran shard 0/3 on
-21.08 after adding the column; all 87 came back bit-identical to the previous
-version apart from the new column, so the re-run is a strict superset and nothing
-else about those runs changed. The pre-column copy is kept at
-`scratch/results_shard0_86a83ff/` on Samuel's machine only — it is gitignored and
-does NOT travel, which is fine because the re-run supersedes it.
+**Code version of the tree:** 258 runs from `2baa662`, 2 from `712f03a`
+(`DoorKey-6/boltzmann/seed4`, `DoorKey-6/count_based/seed2`). `712f03a` is a
+docs-only commit, so the same code produced all 260. `peek.py` prints
+"MIXED TREE" anyway, because it compares against HEAD and HEAD has moved on to
+data and report commits since. That warning is expected now; check the two sha
+values themselves rather than the warning.
 
-Two runs (`DoorKey-6/boltzmann/seed4`, `DoorKey-6/count_based/seed2`) record
-sha `712f03a` where the other 171 record `2baa662`. `712f03a` is a docs-only
-commit, so the code that produced them is the same — but check this yourself with
-`peek.py` rather than taking this line's word for it.
+**`results/` travels through git, not by rsync.** ~692 tracked files under
+`results/`.
 
-**`results/` now travels through git, not by rsync.** This section said the
-opposite until 21.08. The tree was force-added onto a transport branch and merged
-(`0ffc7d6`, `ff96d3d`), so despite the `results/` line in `.gitignore` there are
-now ~692 tracked files under `results/`. Once a path is tracked, `.gitignore` no
-longer applies to it. This does not change CLAUDE.md §10 — the *final* result set
-is still committed once, deliberately — but do not assume a fresh clone lacks the
-data, and do not "fix" the gitignore expecting it to untrack anything.
-
-`report.py` and `figures.py` **refuse to run until all 260 runs are present**,
-because rliable needs every strategy to have the same seeds on every instance. A
-missing shard yields no partial answer, it yields no answer. That refusal is
-deliberate; do not work around it. To look at an incomplete tree, use
-`python scripts/peek.py results`.
-
-**Check the code version before merging trees.** `python scripts/peek.py` prints
-it: every `meta.json` records the `git_sha` that produced its run, and peek
-groups them and flags anything that is not HEAD. Two different values in one tree
-means part of it was made by different code. This bit us twice on 2026-08-20 —
-once for the count-based bonus keying, once for the NoisyNets target — and both
-times cost a re-run.
-
-**Timing, measured** (Daniel, 4 cores, `--workers 4`): 86 runs in 6.0 hours of
-wall-clock time. Per run, `meta.json` reports 761 s fastest, 892 s median, 1282 s
-slowest. No environment family is an outlier, MultiRoom included. On 8 workers
-expect roughly half — that is arithmetic, not a measurement.
+Earlier versions of this file said this happened "despite the `results/` line in
+`.gitignore`". **There is no such line** — checked 22.08 with
+`git check-ignore -v results/Empty-5/boltzmann/seed0/meta.json`, which matches
+nothing. `.gitignore` covers `results_pilot/`, `results_synthetic/`,
+`results_synthetic_noeffect/` and `*.partial/`, but never the real `results/`
+tree. So nothing unusual is going on and there is no gitignore behaviour to
+work around. CLAUDE.md §10 still says the final result set is committed once,
+deliberately — that is a convention we keep, not something git enforces.
 
 ---
+
 
 ## Read this before you interpret any number
 
@@ -138,6 +105,8 @@ Five measurements from 2026-08-21, written up in full in `docs/decision_log.md`
 5. **When a run never sees a reward its value predictions collapse** to about
    1/79th of normal size, and the greedy choice is then made on a gap of 0.0003.
    Measured, not assumed.
+
+**DECISION MADE, 2026-08-22 — we report both. Everything from here to the end of this section is kept as the reasoning behind that choice, not as an open question.** See `docs/decision_log.md`, "2026-08-22 — We report H1 under two definitions of 'did well', not one".
 
 **DECISION NEEDED before anyone interprets the results.** Of the 33 runs in
 Daniel's shard that solved their maze at least once, **7 end with a final score
@@ -179,6 +148,8 @@ against conditional returns of **0.943 / 0.953 / 0.886 / 0.951**. When the greed
 policy does not jam, all four strategies score within 7 points of each other.
 Essentially all of the spread in `final_return` is how OFTEN the policy works,
 not how well it does the task.
+
+**RESOLVED 2026-08-22 — this said "still open".** Whether H1's correlation should keep using `final_return` or move to one of the two new columns is settled: it uses BOTH, side by side, and `conditional_return` was ruled out as a response variable because it is undefined for 167 of the 260 runs. The original text follows.
 
 **Still open, and it is a genuine team call:** whether H1's correlation should
 keep using `final_return` or move to one of the two new columns. Samuel
@@ -227,9 +198,9 @@ mean loses 7.
 
 | | Workstream | Done | Currently on | Next |
 |---|---|---|---|---|
-| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner | — | **all core tasks done** |
-| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets, ✅ knob calibration (`tau_start` 0.1 after pilot) | — | 5 write-ups |
-| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold, ✅ review of 1-6, ✅ report §5 + §8 drafted | **shard 2/3 running**, ETA 13:50 on 21.08 | on 22.08 run figures + report against the real results (task 6 steps 7-9), then write report §6 |
+| **Samuel** | A — Core & Infrastructure | ✅ 1 scaffold, ✅ 2 verify+benchmark, ✅ 3 env factory, ✅ 4 network + buffer, ✅ 5 agent + training loop, ✅ 6 sweep runner, ✅ shard 0/3, ✅ H1 reported under both response definitions (22.08) | — | **write report §1, §2, §4, §9, due 23.08** |
+| **Max** | B — Exploration strategies | ✅ 1 epsilon-greedy, ✅ 2 boltzmann, ✅ 3 count-based, ✅ 4 noisy-nets, ✅ knob calibration (`tau_start` 0.1 after pilot), ✅ shard 1/3 delivered 22.08 | — | **5 write-ups — `report/sections/03-strategies.md`, still not started, due 23.08** |
+| **Daniel** | C — Logging, metrics & analysis | ✅ 1 visitation logging, ✅ 2 aggregation, ✅ 3 coverage metrics, ✅ 4 statistics, ✅ 5 figures, ✅ 6 report scaffold, ✅ review of 1-6, ✅ report §5 + §8 drafted, ✅ shard 2/3 | — | **write report §6 (Results) against `report/results.md`, due 23.08** |
 
 
 **Review of tasks 1-6, 2026-08-19 — one thing everyone needs to know.**

@@ -254,7 +254,11 @@ def test_no_winner_is_named_on_an_instance_nothing_solved(one_tied_instance, tmp
     # table further down, which is not what this test is about.
     section = text.split("## Best strategy per instance")[1].split("\n## ")[0]
     line = [l for l in section.splitlines() if l.startswith("| Empty-5 ")][0]
-    assert "no strategy ever reached the goal" in line, line
+    assert "no strategy solved it reliably" in line, line
+    # Nothing scored here at all, so the count column must say so. The label
+    # alone cannot: it also appears where one trimmed-away seed did solve the
+    # maze (2026-08-22, real DoorKey-7 had a run finishing at 0.976).
+    assert "0 of 20" in line, line
 
 
 def test_an_exact_tie_names_every_tied_strategy():
@@ -379,3 +383,49 @@ def test_curves_of_different_lengths_are_refused_not_truncated():
     assert _stack_curves([np.zeros(4), np.ones(4)], "fig1 Empty/noisy").shape == (2, 4)
     with pytest.raises(ValueError, match="disagree on their number of points"):
         _stack_curves([np.zeros(4), np.ones(3)], "fig1 Empty/noisy")
+
+
+def test_the_report_states_h1_under_both_response_definitions(synthetic, tmp_path):
+    """REGRESSION TEST. Do not delete.
+
+    Decision of 2026-08-22: final_return blends how OFTEN the greedy policy
+    reaches the goal with how WELL it does when it gets there, so the report
+    states H1 under both definitions rather than picking the one that agrees
+    with us. Dropping either half turns a transparent report into a choice we
+    would then have to defend.
+    """
+    from rlx.analysis.report import build_report
+
+    out = tmp_path / "results.md"
+    build_report(synthetic, out)
+    text = out.read_text(encoding="utf-8")
+
+    assert "### Scored by `final_return`" in text
+    assert "### Scored by `success_rate`" in text
+    assert "Verdicts at a glance" in text
+    # Four verdicts: two response definitions x two coverage measures.
+    assert text.count("H1 confirmed (CI entirely above zero AND trend positive)") == 4
+
+
+def test_a_lone_solved_seed_is_not_reported_as_nobody_reaching_the_goal():
+    """REGRESSION TEST. Do not delete.
+
+    IQM trims the top and bottom quarter, so one solved seed in five is trimmed
+    away and every strategy's IQM is 0.0. The label said "no strategy ever
+    reached the goal", which is simply false: on the real DoorKey-7 one run
+    finished with 0.976. Found 2026-08-22 while checking a decision-log claim.
+    """
+    import pandas as pd
+    from rlx.analysis.report import _winners_section
+
+    rows = []
+    for strategy in ("boltzmann", "count_based", "epsilon_greedy", "noisy"):
+        for seed in range(5):
+            scored = strategy == "boltzmann" and seed == 0
+            rows.append({"env_id": "DoorKey-7", "family": "DoorKey", "difficulty": 7,
+                         "strategy": strategy, "seed": seed,
+                         "final_return": 0.976 if scored else 0.0})
+    text = _winners_section(pd.DataFrame(rows))
+
+    assert "no strategy ever reached the goal" not in text
+    assert "1" in text, "the table must say how many runs did reach the goal"

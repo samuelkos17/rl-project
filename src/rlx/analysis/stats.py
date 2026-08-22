@@ -101,10 +101,19 @@ def _bootstrap_spearman_ci(x: np.ndarray, y: np.ndarray,
 
 
 def within_instance_correlation(df: pd.DataFrame, coverage_col: str,
-                                seed: int = 0) -> pd.DataFrame:
-    """Spearman correlation of coverage vs final return, computed per instance.
+                                seed: int = 0,
+                                return_col: str = "final_return") -> pd.DataFrame:
+    """Spearman correlation of coverage vs `return_col`, computed per instance.
 
     NEVER pool instances. See the module docstring.
+
+    `return_col` selects which measure of "did this run end up doing well"
+    H1 is tested against. It defaults to `final_return`, and the report states
+    H1 under `success_rate` as well (decision_log 2026-08-22): `final_return`
+    scores a jammed greedy policy as 0, so it blends how OFTEN the policy
+    reaches the goal with how WELL it does when it gets there, and those two
+    move differently across strategies. Reporting both is what keeps the choice
+    of response variable from being a choice we have to defend.
 
     Each instance also gets its own bootstrap CI over its runs (spec 7.3 step 2),
     which is what says whether a single per-instance rho is worth reading at all
@@ -113,13 +122,13 @@ def within_instance_correlation(df: pd.DataFrame, coverage_col: str,
     rng = np.random.default_rng(seed)
     rows = []
     for env_id, group in df.groupby("env_id", sort=True):
-        if group["final_return"].nunique() < 2 or group[coverage_col].nunique() < 2:
+        if group[return_col].nunique() < 2 or group[coverage_col].nunique() < 2:
             # no variance -- a finding, not an error, and no interval to report
             rho, p, ci_low, ci_high = np.nan, np.nan, np.nan, np.nan
         else:
-            rho, p = stats.spearmanr(group[coverage_col], group["final_return"])
+            rho, p = stats.spearmanr(group[coverage_col], group[return_col])
             ci_low, ci_high = _bootstrap_spearman_ci(
-                group[coverage_col].to_numpy(), group["final_return"].to_numpy(), rng)
+                group[coverage_col].to_numpy(), group[return_col].to_numpy(), rng)
         rows.append({
             "env_id": env_id,
             "difficulty": group["difficulty"].iloc[0],
@@ -201,8 +210,9 @@ def aggregate_correlation(per_instance: pd.DataFrame, seed: int = 0) -> dict:
     }
 
 
-def compare_coverage_predictors(df: pd.DataFrame, seed: int = 0) -> dict:
-    """H2: does task-relevant coverage predict final return better than raw?
+def compare_coverage_predictors(df: pd.DataFrame, seed: int = 0,
+                                return_col: str = "final_return") -> dict:
+    """H2: does task-relevant coverage predict `return_col` better than raw?
 
     Spec section 1 sets two conditions, and the second is the one that is easy to
     skip: the task-relevant correlation must be LARGER *and* the two CIs must not
@@ -215,7 +225,8 @@ def compare_coverage_predictors(df: pd.DataFrame, seed: int = 0) -> dict:
     """
     both = {
         label: aggregate_correlation(
-            within_instance_correlation(df, column, seed=seed), seed=seed)
+            within_instance_correlation(df, column, seed=seed,
+                                        return_col=return_col), seed=seed)
         for label, column in (("raw", "early_auc_raw"), ("task", "early_auc_task"))
     }
     raw, task = both["raw"], both["task"]

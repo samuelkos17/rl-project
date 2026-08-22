@@ -5,12 +5,23 @@ can write in parallel without touching the same file.
 
 | File | Section | Owner | State |
 |---|---|---|---|
+| `01-introduction.md` | 1. Introduction | Samuel | not written yet |
+| `02-background.md` | 2. Background | Samuel | not written yet |
 | `03-strategies.md` | 3. Exploration strategies | Max (his task 5) | not written yet |
+| `04-setup.md` | 4. Experimental setup | Samuel | not written yet |
 | `05-coverage-measurement.md` | 5. Coverage measurement | Daniel | drafted 2026-08-19 |
+| `06-results.md` | 6. Results | Daniel | not written yet |
+| `07-discussion.md` | 7. Discussion | all three | not written yet |
 | `08-limitations.md` | 8. Limitations | Daniel | drafted 2026-08-19 |
+| `09-conclusion.md` | 9. Conclusion | Samuel | not written yet |
 
-Section 6 (Results) is Daniel's and is deliberately not drafted: it is the one
-section that cannot be written before the sweep produces `report/results.md`.
+**The sweep is complete as of 2026-08-22** (260 of 260 runs), so section 6 is no
+longer blocked -- `report/results.md` has every number it needs.
+
+Before writing section 6 or 7, read the two entries dated **2026-08-22** in
+`docs/decision_log.md`. They record that H1 and H2 are reported under TWO
+definitions of performance (`final_return` and `success_rate`), why, and which
+three numbers in the results are more fragile than they look.
 
 The order and ownership of every section is in `report/outline.md`.
 
