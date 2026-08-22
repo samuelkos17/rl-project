@@ -3905,3 +3905,70 @@ set out to show: exploration strategy *does* matter — on DoorKey-5 the gap
 between Boltzmann and NoisyNets is total and the intervals do not touch — but
 early state coverage is not the mechanism that explains why, and beyond a
 difficulty threshold no strategy we tested works reliably at all.
+
+---
+
+## 2026-08-22 — The evaluation jam does not hit the four strategies equally
+
+**Status:** Active
+
+**What changed:** A new function, `evaluation_jam_by_strategy` in
+`src/rlx/analysis/stats.py`, and a section in `report/results.md` that prints
+what it finds. Nothing about how the agents run changed; this only counts
+something in the results we already had.
+
+**What it counts.** A run can learn its maze during training and still be scored
+zero, because the greedy policy we evaluate with walks into a loop and runs out
+of time. So: of the runs whose best training score ever went above 0.1 — that is,
+runs that demonstrably reached the goal at least once — how many were never
+credited at *any* of their ~80 evaluation checkpoints?
+
+| strategy | learned it | never credited | share |
+|---|---|---|---|
+| epsilon-greedy | 26 | 1 | **4%** |
+| boltzmann | 35 | 8 | 23% |
+| count-based | 43 | 11 | 26% |
+| noisy | 26 | 8 | **31%** |
+
+Fisher's exact test, epsilon-greedy against the other three pooled: **p = 0.0147**.
+
+**Why this matters more than it looks.** The whole design rests on changing one
+thing at a time, so that a difference between strategies is a difference in
+exploration. This says part of what we measured is not exploration at all. It is
+the evaluation protocol interacting with the kind of policy each strategy
+produces: epsilon-greedy is the only one whose behaviour during training *is* the
+greedy policy we score it with. Boltzmann samples, count-based reshapes the
+action values with its bonus, and NoisyNets is evaluated with its noise switched
+off. The three that differ from what is being scored are the three that lose
+runs.
+
+**Why we chose that grouping, and why that is not cherry-picking.** We tested
+epsilon-greedy against the rest because the mechanism predicts *in advance* that
+it should be the one spared, not because we looked at the table and picked the
+outlier. The reasoning is in the function's docstring so nobody has to take our
+word for it later.
+
+**The honest caveat: the result depends on where we draw "learned it".** 0.1 is a
+judgement call. The same test at other thresholds:
+
+| threshold | 0.05 | 0.1 | 0.2 | 0.3 |
+|---|---|---|---|---|
+| p | 0.024 | 0.015 | 0.026 | **0.117** |
+
+At 0.3 it is no longer significant. All four values are printed in
+`report/results.md` rather than only the one that suits us, and the report says
+"p = 0.015, and below 0.03 at any threshold from 0.05 to 0.2" instead of quoting
+the single number bare.
+
+**What it means for the results:** No number in the comparison changes. What
+changes is how much weight the middle of the strategy ranking can carry: the
+Boltzmann-versus-NoisyNets gap survives, because NoisyNets is the strategy the
+jam hits hardest and it still loses. Everything between them should be read as
+partly a measurement effect. This is now a paragraph in the report's Discussion.
+
+**Why it was worth 25 lines of code rather than a number typed into the report.**
+The number was first worked out by hand while reading the results. That is
+exactly what `report/outline.md` forbids — every number in the report has to come
+out of `report/results.md`, so that regenerating the analysis regenerates the
+report's claims. Four tests in `tests/test_stats.py` cover it, including that a
+missing comparison arm reports NaN rather than inventing a p-value.

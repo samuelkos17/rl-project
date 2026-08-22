@@ -312,6 +312,34 @@ Runs whose late-phase greedy policy never completed an episode: 167 of 260.
 | MultiRoom-N5 |          0     |              nan     |          0     |
 | MultiRoom-N6 |          0     |              nan     |          0     |
 
+## Is the evaluation jam even-handed?
+
+A greedy evaluation scores exactly 0 when the policy enters a cycle and
+times out, so a run can train well and still read as a total failure.
+Below: of the runs whose best training return exceeded
+`0.1`, how many were never credited at any
+evaluation checkpoint.
+
+| strategy       |   learned |   never_credited | share   |
+|:---------------|----------:|-----------------:|:--------|
+| boltzmann      |        35 |                8 | 23%     |
+| count_based    |        43 |               11 | 26%     |
+| epsilon_greedy |        26 |                1 | 4%      |
+| noisy          |        26 |                8 | 31%     |
+
+Fisher exact, two-sided, epsilon-greedy against the other three pooled:
+**p = 0.0147**.
+
+The threshold is a free parameter, so the same test at other values:
+
+`0.05` -> p = 0.024 | `0.1` -> p = 0.015 | `0.2` -> p = 0.026 | `0.3` -> p = 0.117
+
+The grouping is not read off the counts. Epsilon-greedy is the only
+strategy whose behaviour policy IS the greedy policy being scored -- the
+others sample, reshape the action values, or are evaluated with their
+noise switched off -- so it is the one this mechanism predicts should be
+spared. The threshold is a free parameter and the counts move with it.
+
 ## Performance profiles
 
 Fraction of runs scoring STRICTLY above each threshold `tau`, with

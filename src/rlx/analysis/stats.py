@@ -429,3 +429,78 @@ def performance_profile(df: pd.DataFrame, taus=None, seed: int = 0) -> dict:
         "ci_low": {k: np.asarray(v[0]) for k, v in intervals.items()},
         "ci_high": {k: np.asarray(v[1]) for k, v in intervals.items()},
     }
+
+
+#: A run counts as having solved its maze if its best training return ever
+#: exceeded this. MiniGrid pays 1 - 0.9 * steps/max_steps on success and exactly
+#: 0 on timeout, so any value above 0 means the goal was reached at least once;
+#: 0.1 keeps a single lucky episode inside a long averaging window from counting.
+#: It is a judgement call and the result depends on it, so it is a parameter and
+#: the report states the value used.
+LEARNED_THRESHOLD = 0.1
+
+
+def evaluation_jam_by_strategy(runs: list[RunResult],
+                               learned_threshold: float = LEARNED_THRESHOLD) -> dict:
+    """Runs that solved their maze in training and were never credited for it.
+
+    A greedy evaluation scores exactly 0 whenever the learned policy enters a
+    cycle and times out, so a run can train well and still read as a total
+    failure. This counts, per strategy, the runs whose best training return
+    exceeded `learned_threshold` and whose evaluation return was 0.0 at every
+    single checkpoint.
+
+    The test compares epsilon-greedy against the other three pooled. That
+    grouping is NOT read off the counts: epsilon-greedy is the only strategy
+    whose behaviour policy is the greedy policy being scored -- the others
+    sample, reshape the action values, or are evaluated with their noise
+    switched off -- so it is the one the jam mechanism predicts should be
+    spared. Fisher's exact test rather than a chi-square, because the cells are
+    small.
+
+    Returns `p_value` as NaN, never a number, when either side of the comparison
+    has no runs that learned their maze. Same rule as "no variance, excluded".
+    """
+    rows = []
+    for run in runs:
+        if not {"train_return_mean", "eval_return_mean"} <= set(run.metrics.columns):
+            continue
+        train = run.metrics["train_return_mean"].dropna()
+        evaluation = run.metrics["eval_return_mean"].dropna()
+        if train.empty or evaluation.empty:
+            continue
+        rows.append({
+            "strategy": run.strategy,
+            "learned": float(train.max()) > learned_threshold,
+            "never_credited": float(evaluation.max()) == 0.0,
+        })
+
+    per_strategy = pd.DataFrame(
+        columns=["strategy", "learned", "never_credited", "share"])
+    result = {"table": per_strategy, "learned_threshold": learned_threshold,
+              "p_value": float("nan"), "counts": None}
+    if not rows:
+        return result
+
+    solved = pd.DataFrame(rows).query("learned")
+    if solved.empty:
+        return result
+
+    per_strategy = (solved.groupby("strategy")["never_credited"]
+                    .agg(learned="size", never_credited="sum")
+                    .reset_index())
+    per_strategy["share"] = per_strategy["never_credited"] / per_strategy["learned"]
+    result["table"] = per_strategy
+
+    baseline = solved[solved["strategy"] == "epsilon_greedy"]
+    others = solved[solved["strategy"] != "epsilon_greedy"]
+    if baseline.empty or others.empty:
+        return result
+
+    counts = [[int(baseline["never_credited"].sum()),
+               int((~baseline["never_credited"]).sum())],
+              [int(others["never_credited"].sum()),
+               int((~others["never_credited"]).sum())]]
+    result["counts"] = counts
+    result["p_value"] = float(stats.fisher_exact(counts)[1])
+    return result

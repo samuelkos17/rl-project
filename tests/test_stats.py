@@ -661,3 +661,70 @@ def test_h2_can_be_computed_on_an_alternative_response_column():
 
     assert np.isclose(cmp["task"]["mean_rho"], 1.0), cmp["task"]["mean_rho"]
     assert cmp["task"]["mean_rho"] > cmp["raw"]["mean_rho"]
+
+
+def _jam_run(strategy: str, seed: int, best_train: float, best_eval: float):
+    """A run whose training and evaluation peaks are set directly.
+
+    Two rows, so `.max()` has something to choose between and a run that never
+    scores is not indistinguishable from one with a single logged point.
+    """
+    from rlx.analysis.aggregate import RunResult
+
+    return RunResult(
+        env_id="DoorKey-6", strategy=strategy, seed=seed,
+        metrics=pd.DataFrame({"step": [5_000, 10_000],
+                              "train_return_mean": [0.0, best_train],
+                              "eval_return_mean": [0.0, best_eval]}),
+        steps=np.array([10_000]), counts=np.zeros((1, 5, 5, 4), dtype=np.int32),
+        config={"total_steps": 100_000},
+    )
+
+
+def test_evaluation_jam_counts_only_runs_that_learned():
+    """A run that never trained above the threshold is not evidence of a jam --
+    it is evidence of a maze the strategy could not solve."""
+    from rlx.analysis.stats import evaluation_jam_by_strategy
+
+    runs = [_jam_run("boltzmann", 0, best_train=0.9, best_eval=0.0),   # jammed
+            _jam_run("boltzmann", 1, best_train=0.9, best_eval=0.9),   # credited
+            _jam_run("boltzmann", 2, best_train=0.0, best_eval=0.0)]   # never learned
+    table = evaluation_jam_by_strategy(runs)["table"]
+
+    row = table[table["strategy"] == "boltzmann"].iloc[0]
+    assert row["learned"] == 2, "the run that never trained must not be counted"
+    assert row["never_credited"] == 1
+
+
+def test_evaluation_jam_p_value_is_nan_when_one_side_is_empty():
+    """No epsilon-greedy runs means no comparison. Report that, never a number."""
+    from rlx.analysis.stats import evaluation_jam_by_strategy
+
+    runs = [_jam_run("boltzmann", s, best_train=0.9, best_eval=0.0) for s in range(3)]
+    assert np.isnan(evaluation_jam_by_strategy(runs)["p_value"])
+
+
+def test_evaluation_jam_detects_an_uneven_split():
+    """The claim the report makes: epsilon-greedy spared, the others not."""
+    from rlx.analysis.stats import evaluation_jam_by_strategy
+
+    runs = [_jam_run("epsilon_greedy", s, 0.9, 0.9) for s in range(12)]
+    runs += [_jam_run("epsilon_greedy", 99, 0.9, 0.0)]
+    for strategy in ("boltzmann", "count_based", "noisy"):
+        runs += [_jam_run(strategy, s, 0.9, 0.0) for s in range(8)]
+        runs += [_jam_run(strategy, 90 + s, 0.9, 0.9) for s in range(4)]
+
+    out = evaluation_jam_by_strategy(runs)
+    shares = out["table"].set_index("strategy")["share"]
+    assert shares["epsilon_greedy"] < 0.2
+    assert (shares.drop("epsilon_greedy") > 0.5).all()
+    assert out["p_value"] < 0.01
+
+
+def test_evaluation_jam_threshold_is_respected():
+    """The threshold is a free parameter; raising it must drop marginal runs."""
+    from rlx.analysis.stats import evaluation_jam_by_strategy
+
+    runs = [_jam_run("boltzmann", 0, best_train=0.15, best_eval=0.0)]
+    assert evaluation_jam_by_strategy(runs, learned_threshold=0.1)["table"].empty is False
+    assert evaluation_jam_by_strategy(runs, learned_threshold=0.5)["table"].empty

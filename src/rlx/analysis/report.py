@@ -19,9 +19,9 @@ from rlx.analysis.aggregate import (
 from rlx.envs import ENV_IDS
 from rlx.analysis.stats import (
     _iqm, _score_matrices, aggregate_correlation, build_analysis_table,
-    compare_coverage_predictors, iqm_by_strategy, performance_profile,
-    probability_of_improvement, rank_stability, rliable_aggregate,
-    within_instance_correlation,
+    compare_coverage_predictors, evaluation_jam_by_strategy, iqm_by_strategy,
+    performance_profile, probability_of_improvement, rank_stability,
+    rliable_aggregate, within_instance_correlation,
 )
 
 #: (column in the analysis table, the name the report gives it).
@@ -262,6 +262,44 @@ def _iqm_section(df: pd.DataFrame) -> str:
     ])
 
 
+def _jam_section(runs) -> str:
+    """Does the evaluation jam hit the four strategies equally?
+
+    The report's Discussion states this as a limitation of the comparison
+    itself, so the number has to be regenerable like every other one here.
+    """
+    jam = evaluation_jam_by_strategy(runs)
+    table = jam["table"]
+    if table.empty:
+        return "\n".join(["## Is the evaluation jam even-handed?", "",
+                          "No run cleared the learned-it threshold, so there is",
+                          "nothing to compare.", ""])
+    shown = table.assign(share=table["share"].map(lambda v: f"{v:.0%}"))
+    p_value = jam["p_value"]
+    verdict = ("not computed -- one side of the comparison is empty"
+               if np.isnan(p_value) else f"**p = {p_value:.4f}**")
+    return "\n".join([
+        "## Is the evaluation jam even-handed?", "",
+        "A greedy evaluation scores exactly 0 when the policy enters a cycle and",
+        "times out, so a run can train well and still read as a total failure.",
+        "Below: of the runs whose best training return exceeded",
+        f"`{jam['learned_threshold']}`, how many were never credited at any",
+        "evaluation checkpoint.", "",
+        shown.to_markdown(index=False), "",
+        "Fisher exact, two-sided, epsilon-greedy against the other three pooled:",
+        f"{verdict}.", "",
+        "The threshold is a free parameter, so the same test at other values:", "",
+        " | ".join(f"`{t}` -> p = {evaluation_jam_by_strategy(runs, t)['p_value']:.3f}"
+                   for t in (0.05, 0.1, 0.2, 0.3)), "",
+        "The grouping is not read off the counts. Epsilon-greedy is the only",
+        "strategy whose behaviour policy IS the greedy policy being scored -- the",
+        "others sample, reshape the action values, or are evaluated with their",
+        "noise switched off -- so it is the one this mechanism predicts should be",
+        "spared. The threshold is a free parameter and the counts move with it.",
+        "",
+    ])
+
+
 def _split_section(df: pd.DataFrame) -> str:
     """final_return split into how OFTEN the greedy policy works and how WELL.
 
@@ -466,6 +504,7 @@ def build_report(results_root: Path, out_path: Path) -> None:
         _h2_section(df),
         _iqm_section(df),
         _split_section(df),
+        _jam_section(runs),
         _profile_section(df),
         _improvement_section(df),
         "## Rank stability (H3)\n",

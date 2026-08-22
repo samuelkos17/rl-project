@@ -19,6 +19,7 @@ import pandas as pd
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.colors import to_rgb  # noqa: E402
 from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
 
 from rlx.analysis.aggregate import (  # noqa: E402
@@ -26,8 +27,9 @@ from rlx.analysis.aggregate import (  # noqa: E402
 )
 from rlx.analysis.coverage import raw_coverage, task_relevant_coverage  # noqa: E402
 from rlx.analysis.stats import (  # noqa: E402
-    _score_matrices, aggregate_correlation, build_analysis_table, iqm_by_strategy,
-    performance_profile, rank_stability, within_instance_correlation,
+    _score_matrices, build_analysis_table, iqm_by_strategy,
+    performance_profile, rank_stability, rliable_aggregate,
+    within_instance_correlation,
 )
 from rlx.envs import grid_info  # noqa: E402
 
@@ -55,6 +57,29 @@ LABELS = {
 DIFFICULTY_LABEL = {"Empty": "Grid size", "DoorKey": "Grid size",
                     "MultiRoom": "Number of rooms"}
 N_BAND_RESAMPLES = 1_000
+
+#: Applied module-wide, so the seven figures look like one document. The report
+#: reproduces them at 5.5in inside 10pt text, where matplotlib's defaults put the
+#: frame at a heavier weight than the data and the tick labels below reading
+#: size. A horizontal grid only: every figure here is read off the y axis.
+plt.rcParams.update({
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.edgecolor": "#444444",
+    "axes.linewidth": 0.8,
+    "axes.labelsize": 11,
+    "axes.titlesize": 11,
+    "axes.grid": True,
+    "axes.grid.axis": "y",
+    "axes.axisbelow": True,
+    "grid.color": "#DDDDDD",
+    "grid.linewidth": 0.6,
+    "xtick.color": "#444444",
+    "ytick.color": "#444444",
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+})
 
 
 def _save(fig, out_dir: Path, name: str) -> None:
@@ -124,9 +149,16 @@ def _present_families(df: pd.DataFrame) -> tuple:
     return tuple(family for family in FAMILIES if (df["family"] == family).any())
 
 
-def _family_axes(families: tuple, height: float = 4.0):
-    """One panel per present family, sized so a two-family figure is not stretched."""
-    fig, axes = plt.subplots(1, len(families), figsize=(5 * len(families), height),
+def _family_axes(families: tuple, height: float = 2.4):
+    """One panel per present family, sized so a two-family figure is not stretched.
+
+    Drawn at 2.5in per panel, not 5in. The report places these at 5.5in wide, so
+    a 15in figure is scaled by 0.37 and 10pt tick labels arrive as 3.7pt --
+    exactly the "don't make us zoom in to read your axis descriptions" the
+    template warns about. At 7.5in the scale factor is 0.73 and the same labels
+    arrive at 7.3pt.
+    """
+    fig, axes = plt.subplots(1, len(families), figsize=(2.5 * len(families), height),
                              sharey=True, squeeze=False)
     return fig, axes[0]
 
@@ -153,7 +185,9 @@ def _step_axis(ax) -> None:
     run of digits at report width.
     """
     ax.set_xlabel("Environment steps")
-    ax.xaxis.set_major_locator(MaxNLocator(5))
+    # 3, not 5: at 2.5in per panel five ticks on a 400,000-step axis print
+    # as "160k240k320k" with no gap between them.
+    ax.xaxis.set_major_locator(MaxNLocator(3))
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v / 1000:.0f}k"))
 
 
@@ -204,8 +238,14 @@ def fig2_difficulty_curve(runs: list[RunResult], df: pd.DataFrame,
                 means.append(m[0])
                 low.append(m[0] - lo[0])
                 high.append(hi[0] - m[0])
-            ax.errorbar(levels, means, yerr=[low, high], marker="o", capsize=3,
-                        color=COLORS[strategy], label=LABELS[strategy], lw=1.6, ms=5)
+            # The intervals are genuinely this wide -- five seeds, and on DoorKey
+            # some of them solve the maze while others never do. Drawn at full
+            # weight they are all the eye sees, so they are thinned and lightened
+            # to let the means carry the trend the panel is about.
+            ax.errorbar(levels, means, yerr=[low, high], marker="o", capsize=2,
+                        color=COLORS[strategy], label=LABELS[strategy], lw=1.6, ms=5,
+                        elinewidth=0.9, ecolor=tuple(
+                            0.55 * c + 0.45 for c in to_rgb(COLORS[strategy])))
         ax.set_xticks(ticks)
         ax.set_xlabel(DIFFICULTY_LABEL[family])
         ax.set_title(family, fontsize=10)
@@ -220,7 +260,7 @@ def fig2_difficulty_curve(runs: list[RunResult], df: pd.DataFrame,
 def fig3_coverage_curves(runs: list[RunResult], df: pd.DataFrame,
                          out_dir: Path) -> None:
     """Both coverage measures over training, pooled across instances."""
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(7.0, 2.6), sharey=True)
     panels = ((raw_coverage, "Raw coverage"),
               (task_relevant_coverage, "Task-relevant coverage"))
     for ax, (measure, panel) in zip(axes, panels):
@@ -253,8 +293,9 @@ def fig4_coverage_vs_return(runs: list[RunResult], df: pd.DataFrame,
     Panel 3 shows each instance's own correlation with its bootstrap interval,
     which is what separates a solid per-maze result from a coincidence.
     """
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.6),
-                             gridspec_kw={"width_ratios": [1, 1, 1.15]})
+    fig, axes = plt.subplots(1, 3, figsize=(9.5, 2.8),
+                             gridspec_kw={"width_ratios": [1, 1, 1.15],
+                                          "wspace": 0.42})
     per_instance = {}
     for ax, (column, panel) in zip(axes, (("early_auc_raw", "Raw coverage"),
                                           ("early_auc_task", "Task-relevant coverage"))):
@@ -267,15 +308,23 @@ def fig4_coverage_vs_return(runs: list[RunResult], df: pd.DataFrame,
                 continue
             slope, intercept = np.polyfit(group[column], group["final_return"], 1)
             xs = np.linspace(group[column].min(), group[column].max(), 10)
-            ax.plot(xs, slope * xs + intercept, color="black", alpha=0.18, lw=1)
+            # Thin and pale on purpose: there are 13 of these with very different
+            # slopes, and at any heavier weight they read as scribble over the
+            # scatter rather than as the fits the correlation is computed from.
+            ax.plot(xs, slope * xs + intercept, color="#555555", alpha=0.12, lw=0.8)
 
         per_instance[column] = within_instance_correlation(df, column)
-        agg = aggregate_correlation(per_instance[column])
-        ax.set_xlabel("Early-coverage AUC (first 20% of training)")
-        ax.set_title(f"{panel}\nwithin-instance $\\rho$ = {agg['mean_rho']:+.2f} "
-                     f"[{agg['ci_low']:+.2f}, {agg['ci_high']:+.2f}]", fontsize=10)
+        # Short on purpose. "(first 20% of training)" is in the caption: at
+        # this panel width the long form ran into the neighbouring panel.
+        ax.set_xlabel("Early-coverage AUC")
+        # Pinned, not autoscaled: the fits extrapolate past the data, and letting
+        # them set the limits gave the two panels different y ranges for the same
+        # quantity -- one reaching to -0.2, which no return can take.
+        ax.set_ylim(-0.03, 1.03)
+        # The rho values are stated in the report text and drawn in panel 3.
+        # As a second title line they overlapped the neighbouring title.
+        ax.set_title(panel, fontsize=10)
     axes[0].set_ylabel("Final return (0-1)")
-    _legend(axes[1])
 
     order = {env_id: i for i, env_id in enumerate(ordered_instances(df))}
     forest = (per_instance["early_auc_raw"]
@@ -300,12 +349,24 @@ def fig4_coverage_vs_return(runs: list[RunResult], df: pd.DataFrame,
             markerfacecolor="white", label=family)
     axes[2].axvline(0, color="black", lw=0.8, ls=":")
     axes[2].set_yticks(positions)
-    axes[2].set_yticklabels(forest["env_id"], fontsize=8)
+    axes[2].set_yticklabels(forest["env_id"], fontsize=7)
     axes[2].set_xlim(-1.05, 1.05)
-    axes[2].invert_yaxis()
-    axes[2].set_xlabel("Within-instance Spearman $\\rho$ (raw coverage)")
-    axes[2].set_title("Per instance, with bootstrap CI", fontsize=10)
-    _legend(axes[2])
+    # Half a row of air top and bottom, or the first and last instance labels sit
+    # on the axis line and the descenders are clipped.
+    axes[2].set_ylim(len(forest) - 0.4, -0.6)
+    axes[2].set_xlabel("Spearman $\\rho$ (raw coverage)")
+    axes[2].set_title("Per instance", fontsize=10)
+    # One legend, centred below the figure with real air above it. Two earlier
+    # attempts failed for different reasons: inside the axes it covered the only
+    # populated corner of the scatter, and flush against the bottom edge it read
+    # as stray text rather than as a legend.
+    #
+    # There is deliberately NO family legend. Panel 3 labels every row
+    # "Empty-5", "DoorKey-6", "MultiRoom-N2" already, so the marker shape repeats
+    # the tick label and a key for it is clutter carrying no information.
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="upper center",
+               bbox_to_anchor=(0.5, -0.08), ncol=4, frameon=False, fontsize=10,
+               columnspacing=2.2, handletextpad=0.5)
     _save(fig, out_dir, "fig4_coverage_vs_return")
 
 
@@ -323,8 +384,32 @@ def fig5_iqm(runs: list[RunResult], df: pd.DataFrame,
     # returns every strategy and runs its own bootstrap.
     by_env = {env_id: iqm_by_strategy(df, env_id) for env_id in env_ids}
 
-    fig, axes = plt.subplots(1, 2, figsize=(max(13, len(env_ids) * 1.05), 4.6),
-                             gridspec_kw={"width_ratios": [2.2, 1]})
+    fig, axes = plt.subplots(1, 3, figsize=(max(8.6, len(env_ids) * 0.66), 2.8),
+                             gridspec_kw={"width_ratios": [0.85, 2.2, 1],
+                                          "wspace": 0.34})
+
+    # Panel 1 is the one cross-instance number the report quotes in its abstract,
+    # and it was missing from this figure entirely. Horizontal, because four
+    # strategy names do not fit under vertical bars at this panel width.
+    aggregate = rliable_aggregate(df)
+    order = [strategy for strategy in COLORS if strategy in aggregate]
+    rows = np.arange(len(order))
+    point = np.array([aggregate[s]["iqm"] for s in order])
+    axes[0].barh(rows, point, height=0.5,
+                 color=[COLORS[s] for s in order])
+    axes[0].errorbar(
+        point, rows,
+        xerr=np.array([point - [aggregate[s]["ci_low"] for s in order],
+                       [aggregate[s]["ci_high"] for s in order] - point]),
+        fmt="none", ecolor="#333333", capsize=2, lw=1.0)
+    axes[0].set_yticks(rows)
+    axes[0].set_yticklabels([LABELS[s] for s in order])
+    axes[0].invert_yaxis()
+    axes[0].set_xlabel("IQM final return (0-1)")
+    axes[0].set_title("All instances", fontsize=10)
+    axes[0].grid(axis="x", color="#DDDDDD", lw=0.6)
+    axes[0].grid(axis="y", visible=False)
+
     width = 0.2
     for i, strategy in enumerate(COLORS):
         xs, ys, errs = [], [], []
@@ -335,30 +420,38 @@ def fig5_iqm(runs: list[RunResult], df: pd.DataFrame,
             xs.append(j + (i - 1.5) * width)
             ys.append(result["iqm"])
             errs.append([result["iqm"] - result["ci_low"], result["ci_high"] - result["iqm"]])
-        axes[0].bar(xs, ys, width, color=COLORS[strategy], label=LABELS[strategy])
-        axes[0].errorbar(xs, ys, yerr=np.array(errs).T, fmt="none", ecolor="black",
-                         capsize=2, lw=0.8)
-    axes[0].set_xticks(range(len(env_ids)))
-    axes[0].set_xticklabels(env_ids, rotation=45, ha="right", fontsize=8)
-    axes[0].set_ylabel("IQM final return (0-1)")
-    axes[0].set_title("Per instance", fontsize=10)
+        axes[1].bar(xs, ys, width, color=COLORS[strategy], label=LABELS[strategy])
+        # A darkened strategy colour, not one neutral grey: on the instances where
+        # the IQM is 0 the bar has no height, so the interval is the only thing
+        # drawn, and a lone grey whisker reads as a plotting fault rather than as
+        # "this strategy, zero, with this much uncertainty above it".
+        axes[1].errorbar(xs, ys, yerr=np.array(errs).T, fmt="none", capsize=2, lw=0.9,
+                         ecolor=tuple(0.55 * c for c in to_rgb(COLORS[strategy])))
+    axes[1].set_xticks(range(len(env_ids)))
+    axes[1].set_xticklabels(env_ids, rotation=45, ha="right", fontsize=8)
+    axes[1].set_ylabel("IQM final return (0-1)")
+    axes[1].set_title("Per instance", fontsize=10)
 
     profile = performance_profile(df)
     for strategy in COLORS:
         if strategy not in profile["profiles"]:
             continue
-        axes[1].plot(profile["taus"], profile["profiles"][strategy],
+        axes[2].plot(profile["taus"], profile["profiles"][strategy],
                      color=COLORS[strategy], label=LABELS[strategy], lw=1.6)
-        axes[1].fill_between(profile["taus"], profile["ci_low"][strategy],
+        axes[2].fill_between(profile["taus"], profile["ci_low"][strategy],
                              profile["ci_high"][strategy],
                              color=COLORS[strategy], alpha=0.18, lw=0)
-    axes[1].set_xlabel("Return threshold $\\tau$ (0-1)")
-    axes[1].set_ylabel("Fraction of runs scoring above $\\tau$")
-    axes[1].set_title("Performance profile, all instances", fontsize=10)
-    axes[1].margins(x=0)
-    # The bar panel is full edge to edge, so the shared legend lives here, in the
-    # one corner a decreasing profile always leaves empty.
-    axes[1].legend(frameon=False, fontsize=9, loc="lower left")
+    axes[2].set_xlabel("Return threshold $\\tau$ (0-1)")
+    axes[2].set_ylabel("Fraction above $\\tau$")
+    axes[2].set_title("Performance profile", fontsize=10)
+    axes[2].margins(x=0)
+    # Above the figure, not inside a panel: all three panels encode the same four
+    # strategies, so one shared legend belongs to the figure rather than to the
+    # profile. It goes on top because the middle panel's rotated instance names
+    # already occupy everything below.
+    fig.legend(*axes[2].get_legend_handles_labels(), loc="lower center",
+               bbox_to_anchor=(0.5, 1.04), ncol=4, frameon=False, fontsize=9,
+               columnspacing=1.8, handletextpad=0.5)
     _save(fig, out_dir, "fig5_iqm")
 
 
@@ -373,7 +466,7 @@ def fig6_rank_stability(runs: list[RunResult], df: pd.DataFrame,
     """
     stability = rank_stability(df)
     families = _present_families(df)
-    fig, axes = _family_axes(families, height=3.8)
+    fig, axes = _family_axes(families, height=2.3)
     for ax, family in zip(axes, families):
         group = stability[stability["family"] == family].sort_values("difficulty")
         # .to_numpy(): a family with a single instance hands matplotlib a
@@ -388,6 +481,16 @@ def fig6_rank_stability(runs: list[RunResult], df: pd.DataFrame,
             span = group["difficulty"]
             ax.set_xlim(span.min() - 1, span.max() + 1)
         else:
+            # Instances where nothing solved the maze have no ranking to compare,
+            # so tau is NaN and the point is simply absent. Left unmarked that
+            # reads as missing data; shaded, it reads as the result it is.
+            missing = group[group["tau"].isna()]["difficulty"]
+            if not missing.empty:
+                ax.axvspan(missing.min() - 0.45, missing.max() + 0.45,
+                           color="#F2F2F2", lw=0, zorder=0)
+                ax.text(missing.mean(), -0.62,
+                        "no ranking:\nnothing solved reliably", ha="center",
+                        va="center", fontsize=8, color="#888888")
             ax.plot(group["difficulty"].to_numpy(), group["tau"].to_numpy(),
                     marker="o", color="#333333", lw=1.6, ms=5)
         ax.set_xticks(group["difficulty"].tolist())
@@ -420,7 +523,7 @@ def fig7_visitation_heatmaps(runs: list[RunResult], df: pd.DataFrame, out_dir: P
         raise ValueError(f"no runs for {env_id} seed {seed} to draw heatmaps from")
 
     top = max(float(grid.max()) for grid in panels.values()) or 1.0
-    fig, axes = plt.subplots(1, len(COLORS), figsize=(15, 4))
+    fig, axes = plt.subplots(1, len(COLORS), figsize=(7.5, 2.2))
     image = None
     for ax, strategy in zip(axes, COLORS):
         if strategy not in panels:
